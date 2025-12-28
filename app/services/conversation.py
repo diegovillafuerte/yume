@@ -1,6 +1,6 @@
 """AI Conversation Handler - Orchestrates AI-powered conversations.
 
-This module handles the back-and-forth between Claude and the user,
+This module handles the back-and-forth between GPT and the user,
 including tool execution and conversation state management.
 """
 
@@ -13,7 +13,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai.client import AnthropicClient, get_anthropic_client
+from app.ai.client import OpenAIClient, get_openai_client
 from app.ai.prompts import build_customer_system_prompt, build_staff_system_prompt
 from app.ai.tools import CUSTOMER_TOOLS, STAFF_TOOLS, ToolHandler
 from app.models import (
@@ -42,18 +42,18 @@ class ConversationHandler:
         self,
         db: AsyncSession,
         organization: Organization,
-        anthropic_client: AnthropicClient | None = None,
+        openai_client: OpenAIClient | None = None,
     ):
         """Initialize conversation handler.
 
         Args:
             db: Database session
             organization: Current organization
-            anthropic_client: Anthropic client (uses singleton if not provided)
+            openai_client: OpenAI client (uses singleton if not provided)
         """
         self.db = db
         self.org = organization
-        self.client = anthropic_client or get_anthropic_client()
+        self.client = openai_client or get_openai_client()
         self.tool_handler = ToolHandler(db, organization)
 
     async def handle_customer_message(
@@ -153,7 +153,7 @@ class ConversationHandler:
             history = await self._get_conversation_history(conversation.id)
             messages = history + messages
 
-        # Call Claude with staff tools
+        # Call GPT with staff tools
         response_text = await self._process_with_tools(
             system_prompt=system_prompt,
             messages=messages,
@@ -172,49 +172,48 @@ class ConversationHandler:
         customer: Customer | None = None,
         staff: Staff | None = None,
     ) -> str:
-        """Process a message with Claude, handling tool calls.
+        """Process a message with GPT, handling tool calls.
 
         This implements the tool use loop:
-        1. Send message to Claude
-        2. If Claude wants to use a tool, execute it
-        3. Send tool result back to Claude
-        4. Repeat until Claude gives a final response
+        1. Send message to GPT
+        2. If GPT wants to use a tool, execute it
+        3. Send tool result back to GPT
+        4. Repeat until GPT gives a final response
 
         Args:
-            system_prompt: System prompt for Claude
+            system_prompt: System prompt for GPT
             messages: Conversation history
             tools: Available tools
             customer: Customer context
             staff: Staff context
 
         Returns:
-            Final response text from Claude
+            Final response text from GPT
         """
         max_iterations = 5  # Prevent infinite loops
+        response = None
 
         for iteration in range(max_iterations):
             logger.debug(f"Tool loop iteration {iteration + 1}")
 
-            # Call Claude
-            response = await self.client.create_message(
+            # Call GPT
+            response = self.client.create_message(
                 system_prompt=system_prompt,
                 messages=messages,
                 tools=tools,
             )
 
-            # Check if Claude wants to use tools
+            # Check if GPT wants to use tools
             if self.client.has_tool_calls(response):
                 tool_calls = self.client.extract_tool_calls(response)
-                logger.info(f"Claude wants to use {len(tool_calls)} tool(s)")
+                logger.info(f"GPT wants to use {len(tool_calls)} tool(s)")
 
-                # Add assistant's response (with tool use) to messages
-                messages.append({
-                    "role": "assistant",
-                    "content": response.content,
-                })
+                # Add assistant's response (with tool calls) to messages
+                messages.append(
+                    self.client.format_assistant_message_with_tool_calls(response)
+                )
 
-                # Execute each tool and collect results
-                tool_results = []
+                # Execute each tool and add results as separate messages
                 for tool_call in tool_calls:
                     result = await self.tool_handler.execute_tool(
                         tool_name=tool_call["name"],
@@ -222,27 +221,20 @@ class ConversationHandler:
                         customer=customer,
                         staff=staff,
                     )
-                    tool_results.append({
-                        "type": "tool_result",
-                        "tool_use_id": tool_call["id"],
-                        "content": json.dumps(result, ensure_ascii=False),
-                    })
-
-                # Add tool results to messages
-                messages.append({
-                    "role": "user",
-                    "content": tool_results,
-                })
+                    # Add tool result message in OpenAI format
+                    messages.append(
+                        self.client.format_tool_result_message(tool_call["id"], result)
+                    )
 
             else:
-                # Claude gave a final response
+                # GPT gave a final response
                 response_text = self.client.extract_text_response(response)
-                logger.info(f"Claude final response: {response_text[:100]}...")
+                logger.info(f"GPT final response: {response_text[:100]}...")
                 return response_text
 
         # If we hit max iterations, return what we have
         logger.warning("Hit max tool iterations, returning last response")
-        return self.client.extract_text_response(response)
+        return self.client.extract_text_response(response) if response else "Lo siento, hubo un error."
 
     async def _get_services(self) -> list[ServiceType]:
         """Get active services for the organization."""
@@ -269,13 +261,13 @@ class ConversationHandler:
     async def _get_conversation_history(
         self, conversation_id: UUID
     ) -> list[dict[str, Any]]:
-        """Get conversation history for Claude.
+        """Get conversation history for GPT.
 
         Args:
             conversation_id: Conversation ID
 
         Returns:
-            List of messages in Claude format
+            List of messages in OpenAI format
         """
         result = await self.db.execute(
             select(Message)

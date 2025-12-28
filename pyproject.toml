@@ -23,7 +23,10 @@ dependencies = [
     "redis>=5.0.0",
     "celery>=5.4.0",
 
-    # Anthropic Claude API
+    # OpenAI API
+    "openai>=1.50.0",
+
+    # Anthropic Claude API (legacy)
     "anthropic>=0.39.0",
 
     # HTTP client

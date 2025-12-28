@@ -34,7 +34,10 @@ class Settings(BaseSettings):
     meta_access_token: str = ""  # For sending messages
     meta_api_version: str = "v18.0"
 
-    # Anthropic
+    # OpenAI
+    openai_api_key: str = ""
+
+    # Anthropic (legacy, kept for reference)
     anthropic_api_key: str = ""
 
     # Observability (optional)
