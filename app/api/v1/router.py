@@ -3,11 +3,15 @@
 from fastapi import APIRouter
 
 from app.api.v1 import (
+    admin,
     appointments,
+    auth,
     availability,
     customers,
+    locations,
     organizations,
     services,
+    spots,
     staff,
     webhooks,
 )
@@ -15,7 +19,11 @@ from app.api.v1 import (
 router = APIRouter()
 
 # Include all sub-routers
+router.include_router(admin.router)  # Admin routes
+router.include_router(auth.router)  # Auth first (no org_id prefix)
 router.include_router(organizations.router)
+router.include_router(locations.router)
+router.include_router(spots.router)
 router.include_router(services.router)
 router.include_router(staff.router)
 router.include_router(customers.router)

@@ -15,6 +15,8 @@ if TYPE_CHECKING:
     from app.models.availability import Availability
     from app.models.location import Location
     from app.models.organization import Organization
+    from app.models.service_type import ServiceType
+    from app.models.spot import Spot
 
 
 class StaffRole(str, Enum):
@@ -39,6 +41,9 @@ class Staff(Base, UUIDMixin, TimestampMixin):
     location_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("locations.id", ondelete="SET NULL"), nullable=True
     )
+    default_spot_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("spots.id", ondelete="SET NULL"), nullable=True
+    )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     phone_number: Mapped[str] = mapped_column(
         String(50), nullable=False
@@ -55,11 +60,18 @@ class Staff(Base, UUIDMixin, TimestampMixin):
     # Relationships
     organization: Mapped["Organization"] = relationship("Organization", back_populates="staff")
     location: Mapped["Location | None"] = relationship("Location", back_populates="staff")
+    default_spot: Mapped["Spot | None"] = relationship("Spot", back_populates="staff")
     appointments: Mapped[list["Appointment"]] = relationship(
         "Appointment", back_populates="staff", foreign_keys="Appointment.staff_id"
     )
     availability: Mapped[list["Availability"]] = relationship(
         "Availability", back_populates="staff", cascade="all, delete-orphan"
+    )
+    # Services this staff member can perform
+    service_types: Mapped[list["ServiceType"]] = relationship(
+        "ServiceType",
+        secondary="staff_service_types",
+        back_populates="staff",
     )
 
     def __repr__(self) -> str:

@@ -31,6 +31,7 @@ class AppointmentCreate(AppointmentBase):
     """Schema for creating a new appointment."""
 
     location_id: UUID = Field(..., description="Location ID")
+    spot_id: UUID | None = Field(None, description="Spot/station ID (chair, table, etc.)")
     source: str = Field(
         default="whatsapp", description="Source: whatsapp, web, manual, walk_in"
     )
@@ -41,6 +42,7 @@ class AppointmentUpdate(BaseModel):
     """Schema for updating an appointment (all fields optional)."""
 
     staff_id: UUID | None = None
+    spot_id: UUID | None = None
     scheduled_start: datetime | None = None
     scheduled_end: datetime | None = None
     status: str | None = Field(
@@ -73,6 +75,7 @@ class AppointmentResponse(AppointmentBase):
     id: UUID
     organization_id: UUID
     location_id: UUID
+    spot_id: UUID | None
     status: str
     source: str
     cancellation_reason: str | None

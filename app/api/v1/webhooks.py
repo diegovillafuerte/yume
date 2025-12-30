@@ -1,14 +1,14 @@
-"""WhatsApp webhook endpoints - receive messages from Meta."""
+"""WhatsApp webhook endpoints - receive messages from Twilio."""
 
 import logging
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
+from fastapi.responses import PlainTextResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
 from app.config import get_settings
-from app.schemas.whatsapp import WhatsAppWebhook
 from app.services.message_router import MessageRouter
 from app.services.whatsapp import WhatsAppClient
 
@@ -17,110 +17,114 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 
 
-@router.get("/whatsapp")
-async def verify_webhook(
-    mode: Annotated[str | None, Query(alias="hub.mode")] = None,
-    token: Annotated[str | None, Query(alias="hub.verify_token")] = None,
-    challenge: Annotated[str | None, Query(alias="hub.challenge")] = None,
-) -> str | dict:
-    """Verify webhook with Meta (GET request).
+def _extract_phone_number(twilio_number: str) -> str:
+    """Extract phone number from Twilio format.
 
-    Meta calls this endpoint to verify our webhook URL.
-    We must return the challenge string if the verify token matches.
+    Args:
+        twilio_number: Number in format 'whatsapp:+14155238886'
 
-    See: https://developers.facebook.com/docs/graph-api/webhooks/getting-started
+    Returns:
+        Phone number with + prefix (e.g., '+14155238886')
     """
-    logger.info(
-        f"Webhook verification request:\n"
-        f"  Mode: {mode}\n"
-        f"  Token: {token}\n"
-        f"  Challenge: {challenge}"
-    )
+    # Remove 'whatsapp:' prefix if present
+    if twilio_number.startswith("whatsapp:"):
+        phone = twilio_number[9:]
+    else:
+        phone = twilio_number
 
-    if mode == "subscribe" and token == settings.meta_webhook_verify_token:
-        logger.info("✅ Webhook verification successful")
-        return challenge or ""
+    # Fix URL encoding issue: spaces should be +
+    # In form data, + is decoded as space, so convert back
+    phone = phone.strip()
+    if phone and not phone.startswith("+"):
+        phone = f"+{phone}"
 
-    logger.warning("❌ Webhook verification failed - invalid token")
-    raise HTTPException(
-        status_code=status.HTTP_403_FORBIDDEN,
-        detail="Webhook verification failed",
-    )
+    return phone
 
 
 @router.post("/whatsapp", status_code=status.HTTP_200_OK)
-async def receive_webhook(
+async def receive_twilio_webhook(
     request: Request,
-    webhook: WhatsAppWebhook,
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> dict[str, str]:
-    """Receive incoming WhatsApp messages (POST request).
+    MessageSid: Annotated[str, Form()],
+    From: Annotated[str, Form()],
+    To: Annotated[str, Form()],
+    Body: Annotated[str, Form()],
+    ProfileName: Annotated[str | None, Form()] = None,
+    NumMedia: Annotated[str | None, Form()] = None,
+) -> PlainTextResponse:
+    """Receive incoming WhatsApp messages from Twilio.
 
-    This is where ALL WhatsApp messages arrive.
-    This endpoint must:
-    1. Parse the webhook payload
-    2. Extract message details
-    3. Route to MessageRouter
-    4. Return 200 quickly (Meta expects response within 20 seconds)
+    Twilio sends webhook data as form-encoded POST.
 
-    See: https://developers.facebook.com/docs/whatsapp/cloud-api/webhooks/components
+    Args:
+        MessageSid: Unique message identifier
+        From: Sender number (format: whatsapp:+14155238886)
+        To: Recipient number (our Twilio number)
+        Body: Message content
+        ProfileName: Sender's WhatsApp profile name
+        NumMedia: Number of media attachments
+
+    Returns:
+        Empty TwiML response (or with reply message)
     """
-    logger.info(f"📬 Webhook received: {webhook.object}")
-
-    # Meta expects 200 quickly - we process in background if needed
-    # For now, we'll process synchronously since routing is fast
+    logger.info(
+        f"\n{'='*80}\n"
+        f"📬 TWILIO WEBHOOK RECEIVED\n"
+        f"{'='*80}\n"
+        f"  MessageSid: {MessageSid}\n"
+        f"  From: {From}\n"
+        f"  To: {To}\n"
+        f"  Body: {Body}\n"
+        f"  ProfileName: {ProfileName}\n"
+        f"{'='*80}"
+    )
 
     try:
-        # Initialize WhatsApp client (in mock mode for now)
-        whatsapp_client = WhatsAppClient(mock_mode=True)
+        # Extract phone numbers
+        sender_phone = _extract_phone_number(From)
+        our_number = _extract_phone_number(To)
+
+        # Skip media-only messages for now
+        if NumMedia and int(NumMedia) > 0 and not Body:
+            logger.info(f"Skipping media-only message (no text)")
+            return PlainTextResponse(content="", media_type="text/xml")
+
+        # Initialize WhatsApp client
+        mock_mode = not settings.twilio_account_sid
+        if mock_mode:
+            logger.info("🔧 WhatsApp client in MOCK mode (no TWILIO credentials)")
+        else:
+            logger.info("✅ WhatsApp client in REAL mode")
+
+        whatsapp_client = WhatsAppClient(mock_mode=mock_mode)
 
         # Initialize message router
-        router = MessageRouter(db=db, whatsapp_client=whatsapp_client)
+        message_router = MessageRouter(db=db, whatsapp_client=whatsapp_client)
 
-        # Process each entry in the webhook
-        for entry in webhook.entry:
-            logger.info(f"Processing entry: {entry.id}")
+        # Route the message
+        # Note: phone_number_id is not used by Twilio, pass our number for org lookup
+        await message_router.route_message(
+            phone_number_id=our_number,
+            sender_phone=sender_phone,
+            message_id=MessageSid,
+            message_content=Body,
+            sender_name=ProfileName,
+        )
 
-            for change in entry.changes:
-                if change.field != "messages":
-                    logger.info(f"Skipping non-message change: {change.field}")
-                    continue
-
-                value = change.value
-
-                # Skip if no messages
-                if not value.messages:
-                    logger.info("No messages in webhook payload")
-                    continue
-
-                # Process each message
-                for message in value.messages:
-                    # Only handle text messages for now
-                    if message.type != "text" or not message.text:
-                        logger.info(f"Skipping non-text message: {message.type}")
-                        continue
-
-                    # Extract sender name from contacts if available
-                    sender_name = None
-                    if value.contacts:
-                        for contact in value.contacts:
-                            if contact.wa_id == message.from_:
-                                sender_name = contact.profile.name
-                                break
-
-                    # Route the message!
-                    await router.route_message(
-                        phone_number_id=value.metadata.phone_number_id,
-                        sender_phone=message.from_,
-                        message_id=message.id,
-                        message_content=message.text.body,
-                        sender_name=sender_name,
-                    )
-
-        return {"status": "ok"}
+        # Return empty TwiML (we send responses via the API, not TwiML)
+        return PlainTextResponse(content="", media_type="text/xml")
 
     except Exception as e:
-        logger.error(f"❌ Error processing webhook: {e}", exc_info=True)
-        # Still return 200 to Meta to avoid retries
-        # Log the error for investigation
-        return {"status": "error", "message": str(e)}
+        logger.error(f"❌ Error processing Twilio webhook: {e}", exc_info=True)
+        # Return empty response to avoid Twilio retries
+        return PlainTextResponse(content="", media_type="text/xml")
+
+
+@router.get("/whatsapp/status", status_code=status.HTTP_200_OK)
+async def webhook_status() -> dict[str, str]:
+    """Health check endpoint for webhook configuration."""
+    return {
+        "status": "ok",
+        "provider": "twilio",
+        "whatsapp_number": settings.twilio_whatsapp_number or "not configured",
+    }

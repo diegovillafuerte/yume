@@ -4,6 +4,10 @@ This script helps you test the message router locally without needing
 actual WhatsApp credentials or ngrok.
 
 Usage:
+    # Test webhook verification (GET request)
+    python scripts/test_webhook.py --verify
+
+    # Test message webhook (POST request)
     python scripts/test_webhook.py --customer "Hola, quiero una cita"
     python scripts/test_webhook.py --staff "Qué tengo hoy?"
 """
@@ -16,6 +20,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import httpx
+
+# Load settings to get verify token
+from app.config import get_settings
+
+settings = get_settings()
 
 
 async def send_test_webhook(
@@ -85,6 +94,44 @@ async def send_test_webhook(
                 print(f"Response: {e.response.text}")
 
 
+async def test_webhook_verification():
+    """Test webhook verification (GET request).
+
+    This simulates what Meta does when you register your webhook URL.
+    """
+    print("\n" + "=" * 80)
+    print("🔍 Testing WEBHOOK VERIFICATION (GET)")
+    print("=" * 80)
+
+    params = {
+        "hub.mode": "subscribe",
+        "hub.verify_token": settings.meta_webhook_verify_token,
+        "hub.challenge": "test_challenge_response_123",
+    }
+
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(
+                "http://localhost:8000/api/v1/webhooks/whatsapp",
+                params=params,
+                timeout=10.0,
+            )
+
+            if response.status_code == 200 and response.text == "test_challenge_response_123":
+                print(f"✅ Webhook verification PASSED")
+                print(f"   Challenge echoed back: {response.text}")
+            else:
+                print(f"❌ Webhook verification FAILED")
+                print(f"   Status: {response.status_code}")
+                print(f"   Expected: test_challenge_response_123")
+                print(f"   Got: {response.text}")
+
+        except httpx.HTTPError as e:
+            print(f"❌ Error: {e}")
+            if hasattr(e, "response"):
+                print(f"Response: {e.response.text}")
+
+
 async def test_customer_message():
     """Test a message from a customer."""
     print("\n" + "=" * 80)
@@ -121,6 +168,11 @@ async def main():
 
     parser = argparse.ArgumentParser(description="Test WhatsApp webhook locally")
     parser.add_argument(
+        "--verify",
+        action="store_true",
+        help="Test webhook verification (GET request)",
+    )
+    parser.add_argument(
         "--customer",
         type=str,
         help="Send a customer message with the given text",
@@ -145,7 +197,9 @@ async def main():
 
     args = parser.parse_args()
 
-    if args.customer:
+    if args.verify:
+        await test_webhook_verification()
+    elif args.customer:
         await send_test_webhook(
             message=args.customer,
             sender_phone=args.phone,

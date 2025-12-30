@@ -5,6 +5,8 @@
 
 __all__ = [
     "organization",
+    "location",
+    "spot",
     "staff",
     "customer",
     "service_type",

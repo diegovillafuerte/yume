@@ -12,6 +12,8 @@ from app.models.base import Base, TimestampMixin, UUIDMixin
 if TYPE_CHECKING:
     from app.models.appointment import Appointment
     from app.models.organization import Organization
+    from app.models.spot import Spot
+    from app.models.staff import Staff
 
 
 class ServiceType(Base, UUIDMixin, TimestampMixin):
@@ -38,6 +40,18 @@ class ServiceType(Base, UUIDMixin, TimestampMixin):
     )
     appointments: Mapped[list["Appointment"]] = relationship(
         "Appointment", back_populates="service_type"
+    )
+    # Spots that can perform this service
+    spots: Mapped[list["Spot"]] = relationship(
+        "Spot",
+        secondary="spot_service_types",
+        back_populates="service_types",
+    )
+    # Staff that can perform this service
+    staff: Mapped[list["Staff"]] = relationship(
+        "Staff",
+        secondary="staff_service_types",
+        back_populates="service_types",
     )
 
     def __repr__(self) -> str:

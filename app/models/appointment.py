@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from app.models.location import Location
     from app.models.organization import Organization
     from app.models.service_type import ServiceType
+    from app.models.spot import Spot
     from app.models.staff import Staff
 
 
@@ -65,6 +66,9 @@ class Appointment(Base, UUIDMixin, TimestampMixin):
     service_type_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("service_types.id", ondelete="CASCADE"), nullable=False
     )
+    spot_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("spots.id", ondelete="SET NULL"), nullable=True
+    )
 
     scheduled_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     scheduled_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -99,6 +103,7 @@ class Appointment(Base, UUIDMixin, TimestampMixin):
     service_type: Mapped["ServiceType"] = relationship(
         "ServiceType", back_populates="appointments"
     )
+    spot: Mapped["Spot | None"] = relationship("Spot", back_populates="appointments")
 
     def __repr__(self) -> str:
         """String representation."""

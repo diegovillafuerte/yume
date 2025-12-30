@@ -5,13 +5,24 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import Depends, HTTPException, Query, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models import Organization
 from app.services import organization as org_service
+from app.utils.jwt import get_organization_id_from_token
 
-__all__ = ["get_db", "AsyncSession", "get_organization_dependency", "PaginationParams"]
+__all__ = [
+    "get_db",
+    "AsyncSession",
+    "get_organization_dependency",
+    "get_current_organization",
+    "PaginationParams",
+]
+
+# Bearer token security scheme
+bearer_scheme = HTTPBearer(auto_error=False)
 
 
 # Database session dependency
@@ -34,6 +45,57 @@ async def get_organization_dependency(
             detail=f"Organization {org_id} not found",
         )
     return org
+
+
+# Auth dependency - get current organization from JWT
+async def get_current_organization(
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> Organization:
+    """Get the current organization from the JWT token.
+
+    Raises 401 if not authenticated or token is invalid.
+    """
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    org_id = get_organization_id_from_token(credentials.credentials)
+    if org_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    org = await org_service.get_organization(db, org_id)
+    if not org:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Organization not found",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    return org
+
+
+# Optional auth - doesn't raise if not authenticated
+async def get_current_organization_optional(
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> Organization | None:
+    """Get the current organization from the JWT token, or None if not authenticated."""
+    if credentials is None:
+        return None
+
+    org_id = get_organization_id_from_token(credentials.credentials)
+    if org_id is None:
+        return None
+
+    return await org_service.get_organization(db, org_id)
 
 
 # Pagination parameters

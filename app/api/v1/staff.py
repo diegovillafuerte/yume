@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db, get_organization_dependency
 from app.models import Organization, Staff
-from app.schemas.staff import StaffCreate, StaffResponse, StaffUpdate
+from app.schemas.staff import StaffCreate, StaffResponse, StaffServiceAssignment, StaffUpdate
 from app.services import staff as staff_service
 
 router = APIRouter(prefix="/organizations/{org_id}/staff", tags=["staff"])
@@ -154,3 +154,27 @@ async def delete_staff(
 
     await staff_service.delete_staff(db, staff)
     await db.commit()
+
+
+@router.put(
+    "/{staff_id}/services",
+    response_model=StaffResponse,
+    summary="Assign services to a staff member",
+)
+async def assign_staff_services(
+    staff_id: UUID,
+    assignment: StaffServiceAssignment,
+    org: Annotated[Organization, Depends(get_organization_dependency)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> Staff:
+    """Update which services this staff member can perform."""
+    staff = await staff_service.get_staff(db, staff_id)
+    if not staff or staff.organization_id != org.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Staff member {staff_id} not found",
+        )
+
+    staff = await staff_service.update_staff_services(db, staff, assignment.service_type_ids)
+    await db.commit()
+    return staff

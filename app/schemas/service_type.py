@@ -43,6 +43,19 @@ class ServiceTypeUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+# Simple schema for embedding in other responses
+class ServiceTypeSummary(BaseModel):
+    """Simplified service type for embedding in spot/staff responses."""
+
+    id: UUID
+    name: str
+    duration_minutes: int
+    price_cents: int
+    currency: str = "MXN"
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 # Response schema
 class ServiceTypeResponse(ServiceTypeBase):
     """Schema for service type responses."""

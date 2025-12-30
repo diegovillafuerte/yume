@@ -6,16 +6,91 @@
 
 ## Current Status
 
-**Phase:** Conversational AI Integration Complete ✅
+**Phase:** Web App Implementation Complete ✅
 **Last Updated:** December 27, 2024
-**Last Task Completed:** Full Claude AI integration with tools for customer and staff
-**Blocked By:** Docker Desktop not installed (needed for Postgres/Redis)
+**Last Task Completed:** Web App implementation (backend + frontend)
+**Next Steps:** Run migrations when database is available, test full flow
 
 ---
 
 ## Completed Tasks
 
 <!-- Add completed tasks here with dates. Most recent first. -->
+
+### 2024-12-27 - Web App for Business Owners
+
+**What was built:**
+- **Spot Model** (`app/models/spot.py`)
+  - Physical service stations (chairs, tables, beds)
+  - Linked to locations with cascade delete
+  - Unique constraint on (location_id, name)
+  - Display order for UI sorting
+
+- **Authentication System**
+  - `app/models/auth_token.py` - Magic link tokens with expiry
+  - `app/utils/jwt.py` - JWT token creation and validation
+  - `app/services/auth.py` - Magic link generation and verification
+  - `app/api/v1/auth.py` - Auth endpoints (request-magic-link, verify-magic-link, logout)
+
+- **Location CRUD API** (`app/api/v1/locations.py`)
+  - Full CRUD for organization locations
+  - Validation: can't delete the only location
+
+- **Spots CRUD API** (`app/api/v1/spots.py`)
+  - Full CRUD for spots within locations
+  - Soft delete (is_active = false)
+
+- **Next.js Frontend** (`/frontend`)
+  - Login page with phone number input
+  - Magic link verification page
+  - Dashboard layout with 3 tabs and responsive navigation
+  - Schedule tab with calendar/list view toggle
+  - Employees tab (ready for data integration)
+  - Company tab with settings, locations, services, spots sections
+
+**Key Files Created:**
+- `app/models/spot.py` - Spot model
+- `app/models/auth_token.py` - Auth token model
+- `app/schemas/spot.py` - Spot schemas
+- `app/schemas/auth.py` - Auth schemas
+- `app/services/location.py` - Location service
+- `app/services/spot.py` - Spot service
+- `app/services/auth.py` - Auth service
+- `app/api/v1/locations.py` - Location endpoints
+- `app/api/v1/spots.py` - Spot endpoints
+- `app/api/v1/auth.py` - Auth endpoints
+- `app/utils/jwt.py` - JWT utilities
+- `frontend/` - Complete Next.js application
+
+**Files Modified:**
+- `app/models/appointment.py` - Added spot_id FK
+- `app/models/staff.py` - Added default_spot_id FK
+- `app/models/location.py` - Added spots relationship
+- `app/schemas/appointment.py` - Added spot_id fields
+- `app/schemas/staff.py` - Added default_spot_id fields
+- `app/api/deps.py` - Added JWT auth dependency
+- `app/config.py` - Added JWT and frontend settings
+- `pyproject.toml` - Added PyJWT dependency
+- `.env.example` - Added JWT and frontend config
+
+**Verification:**
+- ✅ Backend loads with 52 routes
+- ✅ Frontend builds successfully
+- ✅ All 6 pages render (/, /login, /verify, /schedule, /employees, /company)
+- ✅ Auth flow ready (magic link → JWT)
+
+**Architecture:**
+```
+Magic Link Flow:
+1. User enters phone → POST /auth/request-magic-link
+2. System sends WhatsApp with link (or prints in dev mode)
+3. User clicks link → GET /verify?token=xxx
+4. Frontend calls POST /auth/verify-magic-link
+5. Backend validates token, returns JWT
+6. Frontend stores JWT, redirects to /schedule
+```
+
+---
 
 ### 2024-12-27 - Conversational AI Integration
 
@@ -190,58 +265,6 @@ Process & Respond
 
 ---
 
-### 2024-12-27 - Testing Infrastructure
-
-**What was built:**
-- **Comprehensive Testing Guide** (`TESTING.md`) with step-by-step instructions
-- **Seed Data Script** (`scripts/seed_test_data.py`) for creating test organization and data
-- Complete testing workflow documented: database setup → seed data → test webhooks
-- Test data includes:
-  - Test organization with WhatsApp connection (phone_number_id: `test_phone_123`)
-  - Staff member for routing tests (Pedro González: `525512345678`)
-  - Service type (Corte de cabello - 30 min)
-  - Primary location with business hours
-
-**Key files created:**
-- `TESTING.md` - Comprehensive testing guide with 10 steps
-- `scripts/seed_test_data.py` - Test data seeding and cleanup script
-
-**Testing Guide Covers:**
-1. Database setup with Docker Compose
-2. Alembic migration execution
-3. Test data seeding
-4. FastAPI server startup
-5. Webhook verification testing (GET)
-6. Customer message flow testing
-7. Staff message flow testing
-8. Message deduplication testing
-9. Database state verification
-10. Mock WhatsApp response verification
-
-**Seed Script Features:**
-- Idempotent (safe to run multiple times)
-- Creates complete test environment
-- Includes cleanup command (`--clean` flag)
-- Matches test_webhook.py phone numbers
-- Helpful summary output with test commands
-
-**Status:**
-- ✅ Testing documentation complete
-- ✅ Seed script ready
-- ⏳ **Blocked by**: Docker not installed on development machine
-- **Next**: Install Docker Desktop → Run docker compose up → Create migrations → Seed data → Test!
-
-**Next Steps:**
-- Install Docker Desktop
-- Start Postgres + Redis containers
-- Create and run initial Alembic migration
-- Run seed script to create test data
-- Test full webhook flow with both customer and staff messages
-- Add AI conversation handlers (Anthropic integration)
-- Create message templates for Meta approval
-
----
-
 ### 2024-12-26 - Core Backend Implementation
 
 **What was built:**
@@ -332,11 +355,7 @@ Process & Respond
 
 <!-- Current work that's not yet complete -->
 
-**Next Immediate Tasks:**
-1. Install Docker and start Postgres + Redis containers
-2. Create initial Alembic migration
-3. Run migration to create database schema
-4. Start building CRUD API endpoints
+_No tasks currently in progress._
 
 ---
 
@@ -381,6 +400,24 @@ Process & Respond
 - [x] System prompts (Spanish)
 - [x] Conversation state management
 
+## Web App Checklist
+
+- [x] Spot model created
+- [ ] Spot migrations created (pending database)
+- [x] spot_id added to Appointment model
+- [x] Location CRUD API endpoints
+- [x] Spots CRUD API endpoints
+- [ ] Spot conflict detection in scheduling
+- [x] AuthToken model created
+- [x] JWT utilities
+- [x] Auth API endpoints (magic link)
+- [x] Next.js project setup
+- [x] Auth pages (login, verify)
+- [x] Dashboard layout with tabs
+- [x] Schedule tab (calendar + list views)
+- [x] Employees tab
+- [x] Company tab
+
 ## Notifications Checklist
 
 - [ ] Celery worker setup
@@ -404,6 +441,11 @@ Process & Respond
 
 | Date | Decision | Rationale |
 |------|----------|-----------|
+| 2024-12-27 | Add Web App for business owners | Essential for setup and testing - owners need to manage schedule, employees, and settings |
+| 2024-12-27 | Magic link auth via WhatsApp | Aligns with WhatsApp-native experience, no passwords to remember |
+| 2024-12-27 | Add Spots model with booking constraints | Chairs/tables need to be tracked, can't double-book same spot |
+| 2024-12-27 | Next.js for frontend | App Router, TypeScript, good DX, easy deployment |
+| 2024-12-27 | Frontend in `/frontend` folder | Monorepo approach, shared codebase |
 | 2024-12-26 | Use String columns with Enum value defaults instead of SQLAlchemy native enums | Provides more flexibility, avoids database-level enum types, easier migrations |
 | 2024-12-26 | Staff identification via unique constraint on (organization_id, phone_number) | Enables staff to message the business WhatsApp and be identified automatically |
 | 2024-12-26 | All models use UUID primary keys | Better for distributed systems, no collision risk, harder to enumerate |
@@ -419,13 +461,14 @@ Process & Respond
 **Current Issues:**
 - Docker not installed on development machine - need to install Docker Desktop to run Postgres/Redis
 - Initial Alembic migration not created yet - pending database availability
-- No Pydantic schemas created yet - needed before building API endpoints
-- No API dependency injection setup yet - will need auth, pagination, etc.
+- Spot conflict detection in scheduling service not yet implemented (model ready, logic pending)
 
 **Technical Debt:**
 - Consider adding database indexes for common queries (e.g., appointments by date range, staff by phone)
 - May want to add check constraints for business logic (e.g., appointment end > start)
 - Consider adding audit fields (created_by, updated_by) for tracking
+- Frontend data fetching hooks (`lib/hooks/`) not yet connected to real APIs
+- Frontend forms not yet wired to backend mutations
 
 ---
 
@@ -448,36 +491,41 @@ Process & Respond
 
 **Immediate Next Steps:**
 
-1. **Install Docker Desktop** (if running locally)
+1. **Install Docker Desktop** and start services:
    ```bash
    docker compose up -d
    ```
 
-2. **Create and run initial migration:**
+2. **Create and run migrations** (includes Spot, AuthToken, and spot_id on Appointment):
    ```bash
    source .venv/bin/activate
-   alembic revision --autogenerate -m "Initial schema with all core entities"
+   alembic revision --autogenerate -m "Initial schema with all entities"
    alembic upgrade head
    ```
 
-3. **Create Pydantic schemas** in `app/schemas/`:
-   - Start with Organization, ServiceType, Staff schemas
-   - Then Customer, Appointment schemas
-   - Follow pattern: Base (shared fields), Create (input), Update (partial input), Response (output)
+3. **Seed test data:**
+   ```bash
+   python scripts/seed_test_data.py
+   ```
 
-4. **Build first CRUD endpoints:**
-   - Start with Organizations API in `app/api/v1/organizations.py`
-   - Implement basic CRUD operations
-   - Add business logic in `app/services/organization.py`
+4. **Test the full flow:**
+   - Backend: `uvicorn app.main:app --reload` (52 routes)
+   - Frontend: `cd frontend && npm run dev` (http://localhost:3000)
+   - Test magic link auth flow
+   - Test webhook routing with `scripts/test_webhook.py`
 
-5. **Add API dependencies:**
-   - Update `app/api/deps.py` with common dependencies
-   - Add pagination helpers
-   - Add error handlers
+5. **Wire up frontend to backend:**
+   - Connect TanStack Query hooks to real API endpoints
+   - Test Schedule, Employees, Company tabs with real data
+
+6. **Add spot conflict detection:**
+   - Update `app/services/scheduling.py` to check spot availability
+   - Prevent double-booking same spot at same time
 
 **Reference Files:**
 - Business context: `docs/PROJECT_SPEC.md`
 - Development patterns: `CLAUDE.md`
+- Testing guide: `TESTING.md`
 - Project overview: `README.md`
 
 **Remember:**
@@ -485,3 +533,4 @@ Process & Respond
 - All times stored in UTC
 - Staff identified by phone number
 - Incremental identity (customers can exist with just phone number)
+- JWT auth for web app, WhatsApp for magic link delivery

@@ -403,10 +403,25 @@ class ToolHandler:
         except ValueError:
             return {"error": "Formato de fecha inválido. Usa YYYY-MM-DD"}
 
+        # Get location (use primary location)
+        from app.models import Location
+
+        location_result = await self.db.execute(
+            select(Location).where(
+                Location.organization_id == self.org.id,
+                Location.is_primary == True,
+            )
+        )
+        location = location_result.scalar_one_or_none()
+
+        if not location:
+            return {"error": "No hay ubicación configurada para el negocio"}
+
         # Get available slots
         slots = await scheduling_service.get_available_slots(
             db=self.db,
             organization_id=self.org.id,
+            location_id=location.id,
             service_type_id=service.id,
             date_from=date_from,
             date_to=date_to,

@@ -12,6 +12,7 @@ from app.models.base import Base, TimestampMixin, UUIDMixin
 if TYPE_CHECKING:
     from app.models.appointment import Appointment
     from app.models.organization import Organization
+    from app.models.spot import Spot
     from app.models.staff import Staff
 
 
@@ -35,6 +36,9 @@ class Location(Base, UUIDMixin, TimestampMixin):
     staff: Mapped[list["Staff"]] = relationship("Staff", back_populates="location")
     appointments: Mapped[list["Appointment"]] = relationship(
         "Appointment", back_populates="location"
+    )
+    spots: Mapped[list["Spot"]] = relationship(
+        "Spot", back_populates="location", cascade="all, delete-orphan"
     )
 
     def __repr__(self) -> str:

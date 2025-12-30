@@ -4,14 +4,19 @@ from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
-from app.models import Staff
+from app.models import ServiceType, Staff
 from app.schemas.staff import StaffCreate, StaffUpdate
 
 
 async def get_staff(db: AsyncSession, staff_id: UUID) -> Staff | None:
-    """Get staff member by ID."""
-    result = await db.execute(select(Staff).where(Staff.id == staff_id))
+    """Get staff member by ID with service types loaded."""
+    result = await db.execute(
+        select(Staff)
+        .where(Staff.id == staff_id)
+        .options(selectinload(Staff.service_types))
+    )
     return result.scalar_one_or_none()
 
 
@@ -36,10 +41,11 @@ async def get_staff_by_phone(
 async def list_staff(
     db: AsyncSession, organization_id: UUID, location_id: UUID | None = None
 ) -> list[Staff]:
-    """List all staff members for an organization, optionally filtered by location."""
+    """List all staff members for an organization with service types loaded."""
     query = select(Staff).where(Staff.organization_id == organization_id)
     if location_id:
         query = query.where(Staff.location_id == location_id)
+    query = query.options(selectinload(Staff.service_types))
     result = await db.execute(query.order_by(Staff.name))
     return list(result.scalars().all())
 
@@ -80,3 +86,25 @@ async def delete_staff(db: AsyncSession, staff: Staff) -> None:
     """Delete a staff member (soft delete by setting is_active=False)."""
     staff.is_active = False
     await db.flush()
+
+
+async def update_staff_services(
+    db: AsyncSession, staff: Staff, service_type_ids: list[UUID]
+) -> Staff:
+    """Update the services that this staff member can perform."""
+    # Fetch the service types by their IDs
+    if service_type_ids:
+        result = await db.execute(
+            select(ServiceType).where(ServiceType.id.in_(service_type_ids))
+        )
+        service_types = list(result.scalars().all())
+    else:
+        service_types = []
+
+    # Replace the staff's service types
+    staff.service_types = service_types
+    await db.flush()
+
+    # Refresh with relationships loaded
+    await db.refresh(staff, ["service_types"])
+    return staff

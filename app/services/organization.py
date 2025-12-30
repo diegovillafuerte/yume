@@ -22,10 +22,33 @@ async def get_organization(db: AsyncSession, org_id: UUID) -> Organization | Non
 async def get_organization_by_whatsapp_phone_id(
     db: AsyncSession, phone_number_id: str
 ) -> Organization | None:
-    """Get organization by WhatsApp phone number ID."""
+    """Get organization by WhatsApp phone number ID (Meta) or phone number (Twilio).
+
+    For Twilio integration, phone_number_id is actually the phone number.
+    We try both fields to maintain compatibility.
+    """
+    # First try Meta's phone_number_id
     result = await db.execute(
         select(Organization).where(
             Organization.whatsapp_phone_number_id == phone_number_id
+        )
+    )
+    org = result.scalar_one_or_none()
+    if org:
+        return org
+
+    # For Twilio: try matching against phone_number field
+    # Normalize the phone number (remove + prefix for comparison)
+    normalized = phone_number_id.lstrip("+")
+
+    # Try with and without + prefix
+    result = await db.execute(
+        select(Organization).where(
+            (Organization.phone_number == phone_number_id)
+            | (Organization.phone_number == f"+{normalized}")
+            | (Organization.phone_number == normalized)
+            | (Organization.whatsapp_phone_number_id == normalized)
+            | (Organization.whatsapp_phone_number_id == f"+{normalized}")
         )
     )
     return result.scalar_one_or_none()

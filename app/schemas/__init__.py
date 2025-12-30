@@ -27,6 +27,7 @@ from app.schemas.service_type import (
     ServiceTypeResponse,
     ServiceTypeUpdate,
 )
+from app.schemas.spot import SpotCreate, SpotResponse, SpotUpdate
 from app.schemas.staff import StaffCreate, StaffResponse, StaffUpdate
 
 __all__ = [
@@ -47,6 +48,10 @@ __all__ = [
     "ServiceTypeCreate",
     "ServiceTypeUpdate",
     "ServiceTypeResponse",
+    # Spot
+    "SpotCreate",
+    "SpotUpdate",
+    "SpotResponse",
     # Customer
     "CustomerCreate",
     "CustomerUpdate",

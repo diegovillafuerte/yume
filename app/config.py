@@ -27,11 +27,16 @@ class Settings(BaseSettings):
     # Redis
     redis_url: str = "redis://localhost:6379/0"
 
-    # Meta WhatsApp
+    # Twilio WhatsApp
+    twilio_account_sid: str = ""
+    twilio_auth_token: str = ""
+    twilio_whatsapp_number: str = ""  # Format: whatsapp:+14155238886
+
+    # Meta WhatsApp (legacy - kept for reference)
     meta_app_id: str = ""
     meta_app_secret: str = ""
     meta_webhook_verify_token: str = "yume-webhook-token"
-    meta_access_token: str = ""  # For sending messages
+    meta_access_token: str = ""
     meta_api_version: str = "v18.0"
 
     # OpenAI
@@ -42,6 +47,18 @@ class Settings(BaseSettings):
 
     # Observability (optional)
     sentry_dsn: str = ""
+
+    # JWT Authentication
+    jwt_secret_key: str = "change-me-jwt-secret-in-production"
+    jwt_algorithm: str = "HS256"
+    jwt_access_token_expire_minutes: int = 60 * 24 * 7  # 7 days
+
+    # Magic Link
+    magic_link_expire_minutes: int = 15
+    frontend_url: str = "http://localhost:3000"
+
+    # Admin
+    admin_master_password: str = ""  # MASTER_PASS - Required for admin access
 
     @property
     def is_production(self) -> bool:
