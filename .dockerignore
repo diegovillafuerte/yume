@@ -6,7 +6,6 @@ __pycache__
 .env.local
 .git
 .gitignore
-README.md
 docker-compose.yml
 .claude
 frontend
