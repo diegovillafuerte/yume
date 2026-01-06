@@ -4,19 +4,26 @@ This module routes incoming WhatsApp messages to the correct handler based on
 whether the sender is a registered staff member or a customer.
 
 Critical Flow:
-1. Message arrives from WhatsApp
-2. Look up organization by phone_number_id
-3. 🔍 CRITICAL: Look up sender - are they staff?
-4. Route to StaffHandler OR CustomerHandler
-5. Process message with AI and send response
+1. Message arrives from WhatsApp (Yume's main number)
+2. Check if sender is a registered staff member of any organization
+   - If yes → Route to staff handler for that org
+3. Check if sender has an existing organization as customer
+   - If yes → Route to customer handler for that org
+4. Check if sender is in onboarding process
+   - If yes → Continue onboarding
+5. Otherwise → Start new business onboarding
 
-This is what enables ONE WhatsApp number to serve TWO different experiences.
+This is what enables ONE WhatsApp number to serve multiple experiences:
+- Business owners onboarding
+- Staff managing their schedule
+- Customers booking appointments
 """
 
 import logging
 from datetime import datetime, timezone
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
@@ -27,6 +34,8 @@ from app.models import (
     MessageContentType,
     MessageDirection,
     MessageSenderType,
+    OnboardingSession,
+    OnboardingState,
     Organization,
     Staff,
 )
@@ -34,6 +43,7 @@ from app.services import customer as customer_service
 from app.services import organization as org_service
 from app.services import staff as staff_service
 from app.services.conversation import ConversationHandler
+from app.services.onboarding import OnboardingHandler
 from app.services.whatsapp import WhatsAppClient
 
 logger = logging.getLogger(__name__)
@@ -63,10 +73,14 @@ class MessageRouter:
         """Route an incoming WhatsApp message.
 
         This is THE critical function that determines the entire user experience.
+        It handles three types of users:
+        1. Staff members of existing organizations
+        2. Customers of existing organizations
+        3. New business owners going through onboarding
 
         Args:
-            phone_number_id: Our WhatsApp number ID (identifies which org)
-            sender_phone: Sender's phone number (identifies staff vs customer)
+            phone_number_id: Our WhatsApp number (Yume's main number)
+            sender_phone: Sender's phone number
             message_id: WhatsApp message ID (for deduplication)
             message_content: The message text
             sender_name: Sender's name from WhatsApp profile (optional)
@@ -78,7 +92,7 @@ class MessageRouter:
             f"\n{'='*80}\n"
             f"📨 INCOMING MESSAGE\n"
             f"{'='*80}\n"
-            f"  Phone Number ID: {phone_number_id}\n"
+            f"  Yume Number: {phone_number_id}\n"
             f"  Sender: {sender_phone} ({sender_name or 'Unknown'})\n"
             f"  Message ID: {message_id}\n"
             f"  Content: {message_content}\n"
@@ -90,30 +104,14 @@ class MessageRouter:
             logger.warning(f"⚠️  Message {message_id} already processed - skipping")
             return {"status": "duplicate", "message_id": message_id}
 
-        # Step 2: Lookup organization
-        org = await org_service.get_organization_by_whatsapp_phone_id(
-            self.db, phone_number_id
-        )
-        if not org:
-            logger.error(
-                f"❌ ROUTING ERROR: Unknown phone_number_id: {phone_number_id}\n"
-                f"   This WhatsApp number is not registered in our system."
-            )
-            return {
-                "status": "error",
-                "reason": "unknown_organization",
-                "phone_number_id": phone_number_id,
-            }
+        # Step 2: Check if sender is a STAFF member of any organization
+        staff, org = await self._find_staff_and_org(sender_phone)
 
-        logger.info(f"✅ Organization found: {org.name} (ID: {org.id})")
-
-        # Step 3: 🔍 CRITICAL ROUTING DECISION - Check if sender is staff
-        staff = await staff_service.get_staff_by_phone(self.db, org.id, sender_phone)
-
-        if staff and staff.is_active:
+        if staff and staff.is_active and org:
             # 🎯 STAFF MESSAGE - Route to staff handler
             logger.info(
                 f"\n🔵 ROUTING DECISION: STAFF\n"
+                f"   Organization: {org.name}\n"
                 f"   Staff Member: {staff.name} (Role: {staff.role})\n"
                 f"   → Routing to StaffConversationHandler"
             )
@@ -121,51 +119,177 @@ class MessageRouter:
                 org, staff, message_content, sender_phone, message_id
             )
             sender_type = MessageSenderType.STAFF
-        else:
-            # 🎯 CUSTOMER MESSAGE - Route to customer handler
-            if staff and not staff.is_active:
-                logger.info(
-                    f"\n🟡 Staff {staff.name} exists but is INACTIVE - treating as customer"
-                )
 
+            # Send response
+            await self.whatsapp.send_text_message(
+                phone_number_id=phone_number_id,
+                to=sender_phone,
+                message=response_text,
+            )
+
+            await self.db.commit()
+            return {
+                "status": "success",
+                "sender_type": sender_type.value,
+                "organization_id": str(org.id),
+                "route": "staff",
+            }
+
+        # Step 3: Check if sender is a CUSTOMER of any organization
+        customer, org = await self._find_customer_and_org(sender_phone)
+
+        if customer and org:
+            # 🎯 CUSTOMER MESSAGE - Route to customer handler
             logger.info(
                 f"\n🟢 ROUTING DECISION: CUSTOMER\n"
-                f"   → Routing to CustomerConversationHandler\n"
-                f"   → Will get_or_create customer with phone {sender_phone}"
+                f"   Organization: {org.name}\n"
+                f"   Customer: {customer.name or 'Unknown'} (ID: {customer.id})\n"
+                f"   → Routing to CustomerConversationHandler"
             )
-
-            # Get or create customer (incremental identity pattern)
-            customer = await customer_service.get_or_create_customer(
-                self.db, org.id, sender_phone, name=sender_name
-            )
-            logger.info(f"   Customer: {customer.name or 'Unknown'} (ID: {customer.id})")
-
             response_text = await self._handle_customer_message(
                 org, customer, message_content, sender_phone, message_id
             )
             sender_type = MessageSenderType.CUSTOMER
 
-        # Step 4: Send response via WhatsApp
+            # Send response
+            await self.whatsapp.send_text_message(
+                phone_number_id=phone_number_id,
+                to=sender_phone,
+                message=response_text,
+            )
+
+            await self.db.commit()
+            return {
+                "status": "success",
+                "sender_type": sender_type.value,
+                "organization_id": str(org.id),
+                "route": "customer",
+            }
+
+        # Step 4: Neither staff nor customer - check for onboarding or start new
+        logger.info(
+            f"\n🟠 ROUTING DECISION: ONBOARDING\n"
+            f"   Sender {sender_phone} is not associated with any organization\n"
+            f"   → Routing to OnboardingHandler"
+        )
+
+        response_text = await self._handle_onboarding_message(
+            sender_phone, message_content, sender_name, message_id
+        )
+
+        # Send response
         await self.whatsapp.send_text_message(
             phone_number_id=phone_number_id,
             to=sender_phone,
             message=response_text,
         )
 
-        logger.info(
-            f"\n✅ MESSAGE ROUTING COMPLETE\n"
-            f"   Sender Type: {sender_type.value}\n"
-            f"   Response Sent: {response_text[:50]}...\n"
-            f"{'='*80}\n"
-        )
-
         await self.db.commit()
-
         return {
             "status": "success",
-            "sender_type": sender_type.value,
-            "organization_id": str(org.id),
+            "sender_type": "onboarding",
+            "route": "onboarding",
         }
+
+    async def _find_staff_and_org(
+        self, phone_number: str
+    ) -> tuple[Staff | None, Organization | None]:
+        """Find staff member and their organization by phone number.
+
+        Args:
+            phone_number: Phone number to look up
+
+        Returns:
+            Tuple of (Staff, Organization) or (None, None)
+        """
+        result = await self.db.execute(
+            select(Staff, Organization)
+            .join(Organization, Staff.organization_id == Organization.id)
+            .where(
+                Staff.phone_number == phone_number,
+                Staff.is_active == True,
+            )
+        )
+        row = result.first()
+        if row:
+            return row[0], row[1]
+        return None, None
+
+    async def _find_customer_and_org(
+        self, phone_number: str
+    ) -> tuple[Customer | None, Organization | None]:
+        """Find customer and their organization by phone number.
+
+        Args:
+            phone_number: Phone number to look up
+
+        Returns:
+            Tuple of (Customer, Organization) or (None, None)
+        """
+        result = await self.db.execute(
+            select(Customer, Organization)
+            .join(Organization, Customer.organization_id == Organization.id)
+            .where(Customer.phone_number == phone_number)
+        )
+        row = result.first()
+        if row:
+            return row[0], row[1]
+        return None, None
+
+    async def _handle_onboarding_message(
+        self,
+        sender_phone: str,
+        message_content: str,
+        sender_name: str | None,
+        message_id: str,
+    ) -> str:
+        """Handle message from user in onboarding flow.
+
+        Args:
+            sender_phone: Sender's phone
+            message_content: Message text
+            sender_name: WhatsApp profile name
+            message_id: Message ID
+
+        Returns:
+            Response text
+        """
+        onboarding_handler = OnboardingHandler(db=self.db)
+
+        # Get or create onboarding session
+        session = await onboarding_handler.get_or_create_session(
+            phone_number=sender_phone,
+            sender_name=sender_name,
+        )
+
+        logger.info(f"   Onboarding session state: {session.state}")
+
+        # Check if onboarding was just completed - redirect to staff flow
+        if session.state == OnboardingState.COMPLETED.value and session.organization_id:
+            # User completed onboarding, now treat them as staff
+            org = await self.db.get(Organization, session.organization_id)
+            if org:
+                staff = await staff_service.get_staff_by_phone(
+                    self.db, org.id, sender_phone
+                )
+                if staff:
+                    logger.info(
+                        f"   Onboarding complete, redirecting to staff flow for {org.name}"
+                    )
+                    return await self._handle_staff_message(
+                        org, staff, message_content, sender_phone, message_id
+                    )
+
+        # Continue onboarding conversation
+        response = await onboarding_handler.handle_message(session, message_content)
+
+        # Check if onboarding just completed
+        await self.db.refresh(session)
+        if session.state == OnboardingState.COMPLETED.value:
+            logger.info(f"   🎉 Onboarding completed! Organization created.")
+            # The AI response already includes the completion message
+
+        return response
 
     async def _handle_staff_message(
         self,

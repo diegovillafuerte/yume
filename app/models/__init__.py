@@ -18,6 +18,7 @@ from app.models.organization import Organization, OrganizationStatus
 from app.models.service_type import ServiceType
 from app.models.spot import Spot
 from app.models.staff import Staff, StaffRole
+from app.models.onboarding_session import OnboardingSession, OnboardingState
 
 __all__ = [
     # Base
@@ -50,4 +51,6 @@ __all__ = [
     "MessageContentType",
     "AvailabilityType",
     "TokenType",
+    "OnboardingSession",
+    "OnboardingState",
 ]
