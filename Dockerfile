@@ -13,8 +13,11 @@ COPY . .
 # Install Python dependencies (non-editable for production)
 RUN pip install --no-cache-dir .
 
+# Make startup script executable
+RUN chmod +x start.sh
+
 # Expose port (Railway auto-detects this)
 EXPOSE 8000
 
-# Run migrations and start server
-CMD alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}
+# Run startup script
+CMD ["./start.sh"]
