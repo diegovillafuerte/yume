@@ -16,6 +16,7 @@ class OnboardingState(str, Enum):
     COLLECTING_BUSINESS_INFO = "collecting_business_info"  # Getting name, type
     COLLECTING_SERVICES = "collecting_services"  # Getting services offered
     COLLECTING_HOURS = "collecting_hours"  # Getting business hours
+    AWAITING_WHATSAPP_CONNECT = "awaiting_whatsapp_connect"  # Waiting for WhatsApp Business connection
     CONFIRMING = "confirming"  # Confirming all details
     COMPLETED = "completed"  # Done, org created
     ABANDONED = "abandoned"  # User stopped responding
@@ -67,6 +68,15 @@ class OnboardingSession(Base, UUIDMixin, TimestampMixin):
 
     # The organization created after completion (null until complete)
     organization_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+
+    # WhatsApp Business connection fields
+    # Unique token for the connection URL (used in /connect?token=xxx)
+    connection_token: Mapped[str | None] = mapped_column(String(100), nullable=True, unique=True, index=True)
+
+    # WhatsApp Business credentials (set after Meta Embedded Signup)
+    whatsapp_phone_number_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    whatsapp_waba_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    whatsapp_access_token: Mapped[str | None] = mapped_column(Text, nullable=True)  # Long-lived token
 
     def __repr__(self) -> str:
         """String representation."""

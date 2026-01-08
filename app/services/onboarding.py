@@ -15,8 +15,8 @@ Flow:
 5. User is redirected to normal staff flow
 """
 
-import json
 import logging
+import secrets
 from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
@@ -141,6 +141,14 @@ ONBOARDING_TOOLS = [
         },
     },
     {
+        "name": "send_whatsapp_connect_link",
+        "description": "Envía el link para conectar WhatsApp Business. Úsalo cuando el usuario haya terminado de agregar servicios y esté listo para conectar su número de WhatsApp Business.",
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+    {
         "name": "send_dashboard_link",
         "description": "Envía el link al dashboard y explica cómo iniciar sesión. Úsalo después de completar el registro.",
         "input_schema": {
@@ -199,12 +207,15 @@ def build_onboarding_system_prompt(session: OnboardingSession) -> str:
     menu_display = _format_service_menu(services)
 
     # Determine current step
+    is_awaiting_connection = session.state == OnboardingState.AWAITING_WHATSAPP_CONNECT.value
     if not collected.get("business_name"):
         current_step = "Paso 1: Obtener nombre del negocio y del dueño"
     elif not services:
         current_step = "Paso 2: Obtener servicios (nombre, precio, duración)"
+    elif is_awaiting_connection:
+        current_step = "Paso 3: Esperando conexión de WhatsApp Business"
     else:
-        current_step = "Paso 3: Confirmar información y finalizar"
+        current_step = "Paso 3: Confirmar servicios y enviar link de conexión"
 
     return f"""Eres Yume, una asistente de inteligencia artificial que ayuda a negocios de belleza en México a automatizar sus citas por WhatsApp.
 
@@ -245,10 +256,15 @@ En solo 2-3 minutos vamos a configurar tu cuenta:
 - Formato: "Agregué [servicio]. Tu menú actual:\n• Corte - $150 (30 min)\n• Barba - $100 (20 min)\n\n¿Qué otro servicio ofreces?"
 - Pregunta si quieren agregar más servicios
 
-### Paso 3: Confirmación
-- Cuando digan que ya no hay más servicios, muestra resumen completo
-- Pregunta si todo está correcto
-- Si confirman, usa `complete_onboarding`
+### Paso 3: Conexión de WhatsApp Business
+- Cuando digan que ya no hay más servicios, muestra el menú completo
+- Pregunta si están listos para conectar su WhatsApp Business
+- Si confirman, usa `send_whatsapp_connect_link` para enviar el link
+- El usuario debe abrir el link en su celular para conectar su cuenta
+
+### Paso 4: Después de conectar (cuando el usuario regresa)
+- Si el usuario escribe después de recibir el link de conexión, pregunta si ya conectó su WhatsApp
+- Si confirman que sí, usa `complete_onboarding` para finalizar
 - Después de completar, usa `send_dashboard_link` para enviar el link al dashboard
 
 ## Instrucciones Importantes
@@ -546,6 +562,35 @@ class OnboardingHandler:
             except Exception as e:
                 logger.error(f"Error creating organization: {e}", exc_info=True)
                 return {"success": False, "error": str(e)}
+
+        elif tool_name == "send_whatsapp_connect_link":
+            # Verify we have minimum required data before sending connect link
+            if not collected.get("business_name"):
+                return {"success": False, "error": "Primero necesito el nombre del negocio"}
+            if not collected.get("services"):
+                return {"success": False, "error": "Primero necesito al menos un servicio"}
+
+            # Generate unique connection token
+            connection_token = secrets.token_urlsafe(32)
+            session.connection_token = connection_token
+            session.state = OnboardingState.AWAITING_WHATSAPP_CONNECT.value
+            await self.db.flush()
+
+            connect_url = f"{FRONTEND_URL}/connect?token={connection_token}"
+            business_name = collected.get("business_name", "tu negocio")
+
+            return {
+                "success": True,
+                "message": "Link de conexión generado",
+                "connect_url": connect_url,
+                "business_name": business_name,
+                "formatted_message": (
+                    f"Perfecto, ya tenemos la información de {business_name}.\n\n"
+                    f"Ahora necesito que conectes tu número de WhatsApp Business.\n\n"
+                    f"👉 Abre este link en tu celular:\n{connect_url}\n\n"
+                    f"Es un proceso de 1 minuto. Cuando termines, regresa aquí y escríbeme."
+                )
+            }
 
         elif tool_name == "send_dashboard_link":
             business_name = collected.get("business_name", "tu negocio")

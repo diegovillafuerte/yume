@@ -7,6 +7,7 @@ from app.api.v1 import (
     appointments,
     auth,
     availability,
+    connect,
     customers,
     locations,
     organizations,
@@ -30,6 +31,7 @@ router.include_router(customers.router)
 router.include_router(appointments.router)
 router.include_router(availability.router)
 router.include_router(webhooks.router)
+router.include_router(connect.router)  # WhatsApp Business connection
 
 
 @router.get("/health")
