@@ -12,7 +12,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base, TimestampMixin, UUIDMixin
 
 if TYPE_CHECKING:
-    from app.models.staff import Staff
+    from app.models.yume_user import YumeUser
 
 
 class AvailabilityType(str, Enum):
@@ -27,8 +27,8 @@ class Availability(Base, UUIDMixin, TimestampMixin):
 
     __tablename__ = "availability"
 
-    staff_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("staff.id", ondelete="CASCADE"), nullable=False
+    yume_user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("yume_users.id", ondelete="CASCADE"), nullable=False
     )
 
     type: Mapped[str] = mapped_column(
@@ -49,7 +49,7 @@ class Availability(Base, UUIDMixin, TimestampMixin):
     )  # false = blocked off
 
     # Relationships
-    staff: Mapped["Staff"] = relationship("Staff", back_populates="availability")
+    yume_user: Mapped["YumeUser"] = relationship("YumeUser", back_populates="availability")
 
     def __repr__(self) -> str:
         """String representation."""

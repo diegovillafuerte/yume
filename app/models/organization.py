@@ -12,10 +12,11 @@ from app.models.base import Base, TimestampMixin, UUIDMixin
 if TYPE_CHECKING:
     from app.models.appointment import Appointment
     from app.models.conversation import Conversation
-    from app.models.customer import Customer
+    from app.models.end_customer import EndCustomer
+    from app.models.execution_trace import ExecutionTrace
     from app.models.location import Location
     from app.models.service_type import ServiceType
-    from app.models.staff import Staff
+    from app.models.yume_user import YumeUser
 
 
 class OrganizationStatus(str, Enum):
@@ -55,20 +56,23 @@ class Organization(Base, UUIDMixin, TimestampMixin):
     locations: Mapped[list["Location"]] = relationship(
         "Location", back_populates="organization", cascade="all, delete-orphan"
     )
-    staff: Mapped[list["Staff"]] = relationship(
-        "Staff", back_populates="organization", cascade="all, delete-orphan"
+    yume_users: Mapped[list["YumeUser"]] = relationship(
+        "YumeUser", back_populates="organization", cascade="all, delete-orphan"
     )
     service_types: Mapped[list["ServiceType"]] = relationship(
         "ServiceType", back_populates="organization", cascade="all, delete-orphan"
     )
-    customers: Mapped[list["Customer"]] = relationship(
-        "Customer", back_populates="organization", cascade="all, delete-orphan"
+    end_customers: Mapped[list["EndCustomer"]] = relationship(
+        "EndCustomer", back_populates="organization", cascade="all, delete-orphan"
     )
     appointments: Mapped[list["Appointment"]] = relationship(
         "Appointment", back_populates="organization", cascade="all, delete-orphan"
     )
     conversations: Mapped[list["Conversation"]] = relationship(
         "Conversation", back_populates="organization", cascade="all, delete-orphan"
+    )
+    execution_traces: Mapped[list["ExecutionTrace"]] = relationship(
+        "ExecutionTrace", back_populates="organization", cascade="all, delete-orphan"
     )
 
     def __repr__(self) -> str:

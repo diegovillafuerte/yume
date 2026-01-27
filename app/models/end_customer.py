@@ -1,4 +1,4 @@
-"""Customer model - represents end consumers who book appointments."""
+"""EndCustomer model - represents end consumers who book appointments."""
 
 import uuid
 from typing import TYPE_CHECKING
@@ -15,13 +15,13 @@ if TYPE_CHECKING:
     from app.models.organization import Organization
 
 
-class Customer(Base, UUIDMixin, TimestampMixin):
+class EndCustomer(Base, UUIDMixin, TimestampMixin):
     """End consumers who book appointments - created with minimal data initially."""
 
-    __tablename__ = "customers"
+    __tablename__ = "end_customers"
     __table_args__ = (
-        UniqueConstraint("organization_id", "phone_number", name="uq_customer_org_phone"),
-        Index("ix_customer_phone_number", "phone_number"),
+        UniqueConstraint("organization_id", "phone_number", name="uq_end_customer_org_phone"),
+        Index("ix_end_customer_phone_number", "phone_number"),
     )
 
     organization_id: Mapped[uuid.UUID] = mapped_column(
@@ -38,15 +38,15 @@ class Customer(Base, UUIDMixin, TimestampMixin):
     settings: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
 
     # Relationships
-    organization: Mapped["Organization"] = relationship("Organization", back_populates="customers")
+    organization: Mapped["Organization"] = relationship("Organization", back_populates="end_customers")
     appointments: Mapped[list["Appointment"]] = relationship(
-        "Appointment", back_populates="customer", cascade="all, delete-orphan"
+        "Appointment", back_populates="end_customer", cascade="all, delete-orphan"
     )
     conversations: Mapped[list["Conversation"]] = relationship(
-        "Conversation", back_populates="customer", cascade="all, delete-orphan"
+        "Conversation", back_populates="end_customer", cascade="all, delete-orphan"
     )
 
     def __repr__(self) -> str:
         """String representation."""
         name_display = self.name if self.name else "Unknown"
-        return f"<Customer(id={self.id}, name='{name_display}', phone='{self.phone_number}')>"
+        return f"<EndCustomer(id={self.id}, name='{name_display}', phone='{self.phone_number}')>"

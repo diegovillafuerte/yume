@@ -14,6 +14,7 @@ celery_app = Celery(
     include=[
         "app.tasks.health",
         "app.tasks.reminders",
+        "app.tasks.cleanup",
     ],
 )
 
@@ -44,6 +45,11 @@ celery_app.conf.update(
         "check-upcoming-reminders": {
             "task": "app.tasks.reminders.check_and_send_reminders",
             "schedule": 300.0,  # Every 5 minutes
+        },
+        "cleanup-old-execution-traces": {
+            "task": "app.tasks.cleanup.cleanup_old_execution_traces",
+            "schedule": 86400.0,  # Every 24 hours (daily)
+            "args": [30],  # Keep 30 days of traces
         },
     },
 )

@@ -12,12 +12,12 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base, TimestampMixin, UUIDMixin
 
 if TYPE_CHECKING:
-    from app.models.customer import Customer
+    from app.models.end_customer import EndCustomer
     from app.models.location import Location
     from app.models.organization import Organization
     from app.models.service_type import ServiceType
     from app.models.spot import Spot
-    from app.models.staff import Staff
+    from app.models.yume_user import YumeUser
 
 
 class AppointmentStatus(str, Enum):
@@ -55,12 +55,12 @@ class Appointment(Base, UUIDMixin, TimestampMixin):
     location_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("locations.id", ondelete="CASCADE"), nullable=False
     )
-    customer_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("customers.id", ondelete="CASCADE"), nullable=False
+    end_customer_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("end_customers.id", ondelete="CASCADE"), nullable=False
     )
-    staff_id: Mapped[uuid.UUID | None] = mapped_column(
+    yume_user_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("staff.id", ondelete="SET NULL"),
+        ForeignKey("yume_users.id", ondelete="SET NULL"),
         nullable=True,  # null = any available
     )
     service_type_id: Mapped[uuid.UUID] = mapped_column(
@@ -96,9 +96,9 @@ class Appointment(Base, UUIDMixin, TimestampMixin):
         "Organization", back_populates="appointments"
     )
     location: Mapped["Location"] = relationship("Location", back_populates="appointments")
-    customer: Mapped["Customer"] = relationship("Customer", back_populates="appointments")
-    staff: Mapped["Staff | None"] = relationship(
-        "Staff", back_populates="appointments", foreign_keys=[staff_id]
+    end_customer: Mapped["EndCustomer"] = relationship("EndCustomer", back_populates="appointments")
+    yume_user: Mapped["YumeUser | None"] = relationship(
+        "YumeUser", back_populates="appointments", foreign_keys=[yume_user_id]
     )
     service_type: Mapped["ServiceType"] = relationship(
         "ServiceType", back_populates="appointments"

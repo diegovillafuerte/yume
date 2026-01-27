@@ -1,4 +1,4 @@
-"""Staff model - represents employees and owners."""
+"""YumeUser model - represents employees and owners who use Yume."""
 
 import uuid
 from enum import Enum
@@ -19,20 +19,20 @@ if TYPE_CHECKING:
     from app.models.spot import Spot
 
 
-class StaffRole(str, Enum):
-    """Staff role enum."""
+class YumeUserRole(str, Enum):
+    """Yume user role enum."""
 
     OWNER = "owner"
     EMPLOYEE = "employee"
 
 
-class Staff(Base, UUIDMixin, TimestampMixin):
+class YumeUser(Base, UUIDMixin, TimestampMixin):
     """People who provide services - also users who can interact via WhatsApp."""
 
-    __tablename__ = "staff"
+    __tablename__ = "yume_users"
     __table_args__ = (
-        UniqueConstraint("organization_id", "phone_number", name="uq_staff_org_phone"),
-        Index("ix_staff_phone_number", "phone_number"),
+        UniqueConstraint("organization_id", "phone_number", name="uq_yume_user_org_phone"),
+        Index("ix_yume_user_phone_number", "phone_number"),
     )
 
     organization_id: Mapped[uuid.UUID] = mapped_column(
@@ -47,9 +47,9 @@ class Staff(Base, UUIDMixin, TimestampMixin):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     phone_number: Mapped[str] = mapped_column(
         String(50), nullable=False
-    )  # Their personal WhatsApp - used to identify them as staff
+    )  # Their personal WhatsApp - used to identify them as yume_user
     role: Mapped[str] = mapped_column(
-        String(20), nullable=False, default=StaffRole.EMPLOYEE.value
+        String(20), nullable=False, default=YumeUserRole.EMPLOYEE.value
     )
     permissions: Mapped[dict] = mapped_column(
         JSONB, nullable=False, default=dict
@@ -58,22 +58,22 @@ class Staff(Base, UUIDMixin, TimestampMixin):
     settings: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
 
     # Relationships
-    organization: Mapped["Organization"] = relationship("Organization", back_populates="staff")
-    location: Mapped["Location | None"] = relationship("Location", back_populates="staff")
-    default_spot: Mapped["Spot | None"] = relationship("Spot", back_populates="staff")
+    organization: Mapped["Organization"] = relationship("Organization", back_populates="yume_users")
+    location: Mapped["Location | None"] = relationship("Location", back_populates="yume_users")
+    default_spot: Mapped["Spot | None"] = relationship("Spot", back_populates="yume_users")
     appointments: Mapped[list["Appointment"]] = relationship(
-        "Appointment", back_populates="staff", foreign_keys="Appointment.staff_id"
+        "Appointment", back_populates="yume_user", foreign_keys="Appointment.yume_user_id"
     )
     availability: Mapped[list["Availability"]] = relationship(
-        "Availability", back_populates="staff", cascade="all, delete-orphan"
+        "Availability", back_populates="yume_user", cascade="all, delete-orphan"
     )
-    # Services this staff member can perform
+    # Services this yume_user can perform
     service_types: Mapped[list["ServiceType"]] = relationship(
         "ServiceType",
-        secondary="staff_service_types",
-        back_populates="staff",
+        secondary="yume_user_service_types",
+        back_populates="yume_users",
     )
 
     def __repr__(self) -> str:
         """String representation."""
-        return f"<Staff(id={self.id}, name='{self.name}', role='{self.role}', phone='{self.phone_number}')>"
+        return f"<YumeUser(id={self.id}, name='{self.name}', role='{self.role}', phone='{self.phone_number}')>"

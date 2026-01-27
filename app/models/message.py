@@ -24,9 +24,12 @@ class MessageDirection(str, Enum):
 class MessageSenderType(str, Enum):
     """Message sender type enum."""
 
-    CUSTOMER = "customer"
+    END_CUSTOMER = "end_customer"
     AI = "ai"
-    STAFF = "staff"
+    YUME_USER = "yume_user"
+    # Backwards compatibility aliases
+    CUSTOMER = "end_customer"  # Deprecated, use END_CUSTOMER
+    STAFF = "yume_user"  # Deprecated, use YUME_USER
 
 
 class MessageContentType(str, Enum):

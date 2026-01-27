@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from app.models.appointment import Appointment
     from app.models.location import Location
     from app.models.service_type import ServiceType
-    from app.models.staff import Staff
+    from app.models.yume_user import YumeUser
 
 
 class Spot(Base, UUIDMixin, TimestampMixin):
@@ -37,8 +37,8 @@ class Spot(Base, UUIDMixin, TimestampMixin):
     appointments: Mapped[list["Appointment"]] = relationship(
         "Appointment", back_populates="spot"
     )
-    # Staff assigned to this spot as their default
-    staff: Mapped[list["Staff"]] = relationship("Staff", back_populates="default_spot")
+    # YumeUsers assigned to this spot as their default
+    yume_users: Mapped[list["YumeUser"]] = relationship("YumeUser", back_populates="default_spot")
     # Services that can be performed at this spot
     service_types: Mapped[list["ServiceType"]] = relationship(
         "ServiceType",

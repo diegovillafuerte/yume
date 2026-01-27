@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from app.models.appointment import Appointment
     from app.models.organization import Organization
     from app.models.spot import Spot
-    from app.models.staff import Staff
+    from app.models.yume_user import YumeUser
 
 
 class Location(Base, UUIDMixin, TimestampMixin):
@@ -33,7 +33,7 @@ class Location(Base, UUIDMixin, TimestampMixin):
 
     # Relationships
     organization: Mapped["Organization"] = relationship("Organization", back_populates="locations")
-    staff: Mapped[list["Staff"]] = relationship("Staff", back_populates="location")
+    yume_users: Mapped[list["YumeUser"]] = relationship("YumeUser", back_populates="location")
     appointments: Mapped[list["Appointment"]] = relationship(
         "Appointment", back_populates="location"
     )

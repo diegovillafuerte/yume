@@ -298,3 +298,79 @@ export interface AdminImpersonateResponse {
   expires_in: number;
   organization: AdminOrganizationSummary;
 }
+
+// Playground types
+export interface PlaygroundUserSummary {
+  phone_number: string;
+  name: string | null;
+  user_type: 'staff' | 'customer';
+  organization_id: string;
+  organization_name: string;
+  role: string | null;
+  user_id: string;
+}
+
+export interface PlaygroundUserDetail extends PlaygroundUserSummary {
+  created_at: string;
+  is_active: boolean | null;
+  appointment_count: number | null;
+}
+
+export interface PlaygroundSendRequest {
+  phone_number: string;
+  message_content: string;
+}
+
+export interface PlaygroundSendResponse {
+  response_text: string;
+  exchange_id: string;
+  latency_ms: number;
+  route: string;
+  organization_id: string | null;
+}
+
+export interface TraceStepSummary {
+  id: string;
+  trace_type: string;
+  sequence_number: number;
+  latency_ms: number;
+  is_error: boolean;
+  tool_name: string | null;
+  llm_call_number: number | null;
+}
+
+export interface TraceExchangeSummary {
+  exchange_id: string;
+  created_at: string;
+  total_latency_ms: number;
+  step_count: number;
+  user_message_preview: string | null;
+  ai_response_preview: string | null;
+  steps: TraceStepSummary[];
+}
+
+export interface TraceStepDetail {
+  id: string;
+  exchange_id: string;
+  trace_type: string;
+  sequence_number: number;
+  started_at: string;
+  completed_at: string;
+  latency_ms: number;
+  input_data: Record<string, unknown>;
+  output_data: Record<string, unknown>;
+  metadata: Record<string, unknown>;
+  is_error: boolean;
+  error_message: string | null;
+}
+
+export interface PlaygroundExchangeListResponse {
+  phone_number: string;
+  exchanges: TraceExchangeSummary[];
+}
+
+export interface PlaygroundTraceListResponse {
+  exchange_id: string;
+  total_latency_ms: number;
+  traces: TraceStepSummary[];
+}

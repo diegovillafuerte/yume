@@ -79,8 +79,8 @@ yume/
 ├── app/                         # Backend
 │   ├── main.py                  # FastAPI entry
 │   ├── config.py                # Settings
-│   ├── api/v1/                  # Endpoints (~57 routes)
-│   ├── models/                  # SQLAlchemy (14 models)
+│   ├── api/v1/                  # Endpoints (~63 routes)
+│   ├── models/                  # SQLAlchemy (15 models)
 │   ├── schemas/                 # Pydantic schemas
 │   ├── services/                # Business logic
 │   ├── ai/                      # OpenAI integration
@@ -110,6 +110,7 @@ yume/
 | Availability | Staff schedules |
 | AuthToken | Magic link tokens |
 | OnboardingSession | Tracks WhatsApp onboarding state for new businesses |
+| ExecutionTrace | AI pipeline execution traces for debugging |
 
 **Key relationships:**
 - Staff ↔ ServiceType: many-to-many (what staff can do)
@@ -169,16 +170,17 @@ NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
 ## Current Implementation Status
 
 ### Fully Implemented
-- All 14 database models with proper relationships
-- ~57 API endpoints for all resources
-- Admin dashboard (stats, org management, impersonation, conversations, activity)
+- All 15 database models with proper relationships
+- ~63 API endpoints for all resources
+- Admin dashboard (stats, org management, impersonation, conversations, activity, playground)
+- Admin conversation playground (emulate users, view AI pipeline execution traces)
 - AI conversation handler with tool calling (customer + staff flows)
 - Message routing (staff vs customer identification)
 - Availability slot calculation with conflict validation
 - Magic link authentication
 - Frontend: login, location management, company settings, schedule page
 - Schedule page with filtering, appointment actions (complete, no-show, cancel)
-- Celery background tasks with 24-hour appointment reminders
+- Celery background tasks with 24-hour appointment reminders + trace cleanup
 - WhatsApp onboarding flow (business setup via chat)
 - Twilio WhatsApp integration (send/receive messages)
 - Meta Embedded Signup (connect existing WhatsApp Business numbers)
@@ -205,8 +207,11 @@ NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
 | `app/ai/prompts.py` | System prompts (Spanish) |
 | `app/tasks/celery_app.py` | Celery configuration + beat schedule |
 | `app/tasks/reminders.py` | 24-hour appointment reminder tasks |
+| `app/services/execution_tracer.py` | Captures AI pipeline execution traces |
+| `app/services/playground.py` | Admin playground business logic |
 | `frontend/src/providers/AuthProvider.tsx` | Auth context |
 | `frontend/src/lib/api/client.ts` | Axios with dual token handling |
+| `frontend/src/app/admin/playground/page.tsx` | Admin conversation playground UI |
 
 ## Development Guidelines
 
@@ -236,6 +241,7 @@ Every query must filter by `organization_id` to prevent data leakage.
 - WhatsApp webhook must respond within 20 seconds
 - Check tool call format if AI seems stuck
 - Admin dashboard has conversation viewer for debugging
+- **Admin Playground** (`/admin/playground`): Emulate any user, see full AI execution traces with latencies
 
 ## Session Workflow
 

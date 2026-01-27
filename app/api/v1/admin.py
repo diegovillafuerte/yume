@@ -22,7 +22,19 @@ from app.schemas.admin import (
     AdminOrgStatusUpdate,
     AdminStats,
 )
+from app.schemas.playground import (
+    PlaygroundExchangeListResponse,
+    PlaygroundSendRequest,
+    PlaygroundSendResponse,
+    PlaygroundTraceListResponse,
+    PlaygroundUserDetail,
+    PlaygroundUserSummary,
+    TraceExchangeSummary,
+    TraceStepDetail,
+    TraceStepSummary,
+)
 from app.services import admin as admin_service
+from app.services import playground as playground_service
 from app.utils.jwt import create_admin_access_token
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -275,3 +287,130 @@ async def get_activity_feed(
     """Get recent activity feed."""
     activities = await admin_service.get_activity_feed(db, limit)
     return [AdminActivityItem(**a) for a in activities]
+
+
+# =============================================================================
+# Playground Endpoints - Debug conversation UI
+# =============================================================================
+
+
+@router.get(
+    "/playground/users",
+    response_model=list[PlaygroundUserSummary],
+    dependencies=[Depends(require_admin)],
+)
+async def list_playground_users(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    search: Annotated[str | None, Query()] = None,
+    limit: int = 100,
+) -> list[PlaygroundUserSummary]:
+    """List all users (staff and customers) for the playground dropdown."""
+    users = await playground_service.list_playground_users(db, search, limit)
+    return [PlaygroundUserSummary(**u) for u in users]
+
+
+@router.get(
+    "/playground/users/{phone_number}",
+    response_model=PlaygroundUserDetail,
+    dependencies=[Depends(require_admin)],
+)
+async def get_playground_user(
+    phone_number: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> PlaygroundUserDetail:
+    """Get detailed user info for the playground info panel."""
+    user = await playground_service.get_user_detail(db, phone_number)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return PlaygroundUserDetail(**user)
+
+
+@router.post(
+    "/playground/send",
+    response_model=PlaygroundSendResponse,
+    dependencies=[Depends(require_admin)],
+)
+async def send_playground_message(
+    request: PlaygroundSendRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> PlaygroundSendResponse:
+    """Send a message through the playground (emulating a user).
+
+    Processes the message through the real AI pipeline but doesn't
+    send an actual WhatsApp response. Returns the AI response and
+    execution trace exchange_id for debugging.
+    """
+    result = await playground_service.send_playground_message(
+        db, request.phone_number, request.message_content
+    )
+    return PlaygroundSendResponse(**result)
+
+
+@router.get(
+    "/playground/exchanges",
+    response_model=PlaygroundExchangeListResponse,
+    dependencies=[Depends(require_admin)],
+)
+async def list_playground_exchanges(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    phone_number: Annotated[str | None, Query()] = None,
+    org_id: Annotated[UUID | None, Query()] = None,
+    limit: int = 20,
+) -> PlaygroundExchangeListResponse:
+    """List recent message exchanges with their traces."""
+    exchanges = await playground_service.list_recent_exchanges(
+        db, phone_number, org_id, limit
+    )
+    return PlaygroundExchangeListResponse(
+        phone_number=phone_number or "",
+        exchanges=[
+            TraceExchangeSummary(
+                exchange_id=e["exchange_id"],
+                created_at=e["created_at"],
+                total_latency_ms=e["total_latency_ms"],
+                step_count=e["step_count"],
+                user_message_preview=e["user_message_preview"],
+                ai_response_preview=e["ai_response_preview"],
+                steps=[TraceStepSummary(**s) for s in e["steps"]],
+            )
+            for e in exchanges
+        ],
+    )
+
+
+@router.get(
+    "/playground/traces",
+    response_model=PlaygroundTraceListResponse,
+    dependencies=[Depends(require_admin)],
+)
+async def get_exchange_traces(
+    exchange_id: Annotated[UUID, Query()],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> PlaygroundTraceListResponse:
+    """Get all traces for a specific exchange."""
+    traces = await playground_service.get_exchange_traces(db, exchange_id)
+    if not traces:
+        raise HTTPException(status_code=404, detail="Exchange not found")
+
+    total_latency = sum(t["latency_ms"] for t in traces)
+    return PlaygroundTraceListResponse(
+        exchange_id=exchange_id,
+        total_latency_ms=total_latency,
+        traces=[TraceStepSummary(**t) for t in traces],
+    )
+
+
+@router.get(
+    "/playground/traces/{trace_id}",
+    response_model=TraceStepDetail,
+    dependencies=[Depends(require_admin)],
+)
+async def get_trace_detail(
+    trace_id: UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> TraceStepDetail:
+    """Get full detail of a single trace step (for L3 modal)."""
+    trace = await playground_service.get_trace_detail(db, trace_id)
+    if not trace:
+        raise HTTPException(status_code=404, detail="Trace not found")
+    return TraceStepDetail(**trace)

@@ -2,7 +2,7 @@
 
 This document tracks progress toward production readiness. Requirements are from `docs/PROJECT_SPEC.md`.
 
-**Last Updated:** 2026-01-27
+**Last Updated:** 2026-01-27 (Playground implementation added)
 
 ---
 
@@ -16,17 +16,18 @@ This document tracks progress toward production readiness. Requirements are from
 **WhatsApp:** Twilio WhatsApp API
 
 ### What's Working
-- Backend API (57 endpoints) - deployed on Railway
-- Database models (14 entities) - Railway PostgreSQL
+- Backend API (63 endpoints) - deployed on Railway
+- Database models (15 entities) - Railway PostgreSQL
 - AI conversation with GPT-5.2 tool calling (customer + staff flows)
 - Message routing (staff vs customer identification)
 - Availability slot calculation
 - Appointment conflict validation (double-booking prevention)
 - Admin dashboard (complete)
+- Admin Playground (conversation debugger with execution tracing)
 - Frontend: login, location/staff/service/spot management, company settings
 - Frontend: Schedule page with appointment viewing, filtering, and actions
 - Magic link authentication
-- Celery background tasks with 24-hour appointment reminders
+- Celery background tasks with 24-hour appointment reminders + trace cleanup
 - Twilio WhatsApp integration (send/receive messages)
 - Meta Embedded Signup (connect existing WhatsApp Business numbers)
 - Twilio number provisioning (provision new numbers for businesses)
@@ -326,6 +327,50 @@ Phase 1 established the core architecture. All items below are implemented.
 
 **Acceptance:** Each business can connect their own WhatsApp number or get a Yume-provisioned number.
 
+### 5.3 Conversation Debug Playground ✅ COMPLETE
+**Priority:** MEDIUM
+**Files:** Multiple new files
+
+**Backend:**
+- [x] Create ExecutionTrace model with JSONB columns for flexible trace storage
+- [x] Create ExecutionTracer service with context manager pattern
+- [x] Modify conversation.py to add optional tracer parameter
+- [x] Modify message_router.py for tracing and skip_whatsapp_send
+- [x] Add 6 new playground API endpoints
+- [x] Add Celery cleanup task for traces older than 30 days
+
+**Frontend:**
+- [x] Create playground page with two-column layout
+- [x] UserSelector component (dropdown with search)
+- [x] UserInfoPanel component (selected user details)
+- [x] ChatEmulator component (WhatsApp-style chat)
+- [x] ExecutionLogger component (expandable trace view L1/L2)
+- [x] TraceDetailModal component (full trace detail L3)
+- [x] Add Playground tab to admin navigation
+
+**New Files Created:**
+- `app/models/execution_trace.py`
+- `app/services/execution_tracer.py`
+- `app/services/playground.py`
+- `app/schemas/playground.py`
+- `app/tasks/cleanup.py`
+- `alembic/versions/20260127_*_add_execution_traces_table.py`
+- `frontend/src/app/admin/playground/page.tsx`
+- `frontend/src/components/admin/playground/*.tsx` (5 files)
+- `frontend/src/lib/api/playground.ts`
+
+**Key Features:**
+- Emulate conversations from any user (staff/customer)
+- Process messages through real AI pipeline
+- Skip WhatsApp sending in playground mode
+- Three-level execution trace viewer:
+  - L1: Exchange tiles with total latency
+  - L2: Processing steps with emoji indicators (🧠 LLM, ⚙️ Tool)
+  - L3: Full trace detail in modal (prompts, tool params, responses)
+- Automatic trace cleanup after 30 days
+
+**Acceptance:** Admins can debug any conversation with full pipeline visibility.
+
 ---
 
 ## Phase 6: Testing & Quality
@@ -509,7 +554,7 @@ This maps PROJECT_SPEC.md requirements to implementation tasks.
 | 4.1.x | Admin access | ✅ Done | 1 |
 | 4.2.x | Platform statistics | ✅ Done | 1 |
 | 4.3.x | Manage organizations | ✅ Done | 1 |
-| 4.4.x | Debug conversations | ✅ Done | 1 |
+| 4.4.x | Debug conversations | ✅ Done (Playground with execution tracing) | 5.3 |
 | 4.5.x | Monitor activity | ✅ Done | 1 |
 | 4.6.x | Perform org actions | ✅ Done (via impersonation) | 1 |
 
@@ -572,6 +617,10 @@ Based on dependencies and business value:
 - **LLM:** Using GPT-5.2 for all AI conversations
 - **WhatsApp:** Using Twilio API (not Meta direct)
 - Phase 2 Core (2.1-2.4) and Phase 3 Core (3.1, 3.2) and Phase 5 now COMPLETE
+- **Playground:** New conversation debugger in admin dashboard (Phase 5.3)
+  - Run migration: `alembic upgrade head` to create execution_traces table
+  - Traces stored for ALL messages (not just playground) for retroactive debugging
+  - Automatic cleanup task removes traces older than 30 days
 - Onboarding flow: Business owners can set up via WhatsApp conversation in <15 min
 - Customer booking flow enhanced: Faster booking with flexible date interpretation
 - Staff tools enhanced: Better schedule display with blocked times
@@ -591,6 +640,9 @@ Based on dependencies and business value:
 
 | Date | Changes |
 |------|---------|
+| 2026-01-27 | Completed Phase 5.3: Conversation Debug Playground with execution tracing |
+| 2026-01-27 | Added ExecutionTrace model, ExecutionTracer service, 6 playground API endpoints |
+| 2026-01-27 | Added Celery cleanup task for execution traces (30-day retention) |
 | 2026-01-27 | Updated PROJECT_SPEC.md: Railway deployment, Twilio WhatsApp API, GPT-5.2 |
 | 2026-01-27 | Completed Phase 7.3: Deployed on Railway (backend, frontend, PostgreSQL, Redis) |
 | 2026-01-26 | Completed Phase 5.1: Full onboarding conversation flow with staff collection |
