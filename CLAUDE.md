@@ -12,7 +12,7 @@ Yume is a WhatsApp-native AI scheduling assistant for beauty businesses in Mexic
 
 ```bash
 # Start infrastructure
-docker-compose up -d              # Postgres + Redis
+docker-compose up -d              # Postgres + Redis + Celery
 
 # Backend
 source .venv/bin/activate
@@ -22,6 +22,10 @@ uvicorn app.main:app --reload     # Start API (port 8000)
 # Frontend
 cd frontend && npm run dev        # Start Next.js (port 3000)
 cd frontend && npm run build      # Build for production
+
+# Celery (for background tasks like reminders)
+celery -A app.tasks.celery_app worker --loglevel=info  # Worker
+celery -A app.tasks.celery_app beat --loglevel=info    # Scheduler
 
 # Testing
 pytest                            # Run all tests
@@ -48,7 +52,7 @@ ngrok http 8000                   # For Twilio webhooks
                         ▼        ▼        ▼
                ┌─────────────┐ ┌───────┐ ┌─────────────┐
                │   OpenAI    │ │ Redis │ │   Next.js   │
-               │   GPT-4.1   │ │       │ │   Frontend  │
+               │   GPT-5.2   │ │       │ │   Frontend  │
                └─────────────┘ └───────┘ └─────────────┘
 ```
 
@@ -63,10 +67,10 @@ ngrok http 8000                   # For Twilio webhooks
 |-------|------------|
 | Backend | Python 3.11+, FastAPI, Pydantic v2 |
 | Database | PostgreSQL 15+, SQLAlchemy 2.0 (async), Alembic |
-| AI | OpenAI GPT-4.1 with function calling |
+| AI | OpenAI GPT-5.2 with function calling |
 | WhatsApp | Twilio WhatsApp API |
 | Frontend | Next.js 15, TypeScript, Tailwind CSS |
-| Background | Redis + Celery (not yet implemented) |
+| Background | Redis + Celery (appointment reminders) |
 
 ## Project Structure
 
@@ -80,7 +84,7 @@ yume/
 │   ├── schemas/                 # Pydantic schemas
 │   ├── services/                # Business logic
 │   ├── ai/                      # OpenAI integration
-│   └── tasks/                   # Celery tasks (empty)
+│   └── tasks/                   # Celery tasks (reminders)
 ├── frontend/                    # Next.js app
 │   └── src/
 │       ├── app/                 # Pages (13 routes)
@@ -105,6 +109,7 @@ yume/
 | Conversation/Message | WhatsApp threads |
 | Availability | Staff schedules |
 | AuthToken | Magic link tokens |
+| OnboardingSession | Tracks WhatsApp onboarding state for new businesses |
 
 **Key relationships:**
 - Staff ↔ ServiceType: many-to-many (what staff can do)
@@ -144,6 +149,7 @@ Check message_id before processing to handle duplicate deliveries.
 
 Backend `.env`:
 ```bash
+APP_ENV=development  # development, staging, production
 DATABASE_URL=postgresql+asyncpg://user:pass@localhost:5432/yume
 REDIS_URL=redis://localhost:6379/0
 OPENAI_API_KEY=sk-...
@@ -168,21 +174,23 @@ NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
 - Admin dashboard (stats, org management, impersonation, conversations, activity)
 - AI conversation handler with tool calling (customer + staff flows)
 - Message routing (staff vs customer identification)
-- Availability slot calculation
+- Availability slot calculation with conflict validation
 - Magic link authentication
-- Frontend: login, location management, company settings
+- Frontend: login, location management, company settings, schedule page
+- Schedule page with filtering, appointment actions (complete, no-show, cancel)
+- Celery background tasks with 24-hour appointment reminders
+- WhatsApp onboarding flow (business setup via chat)
+- Twilio WhatsApp integration (send/receive messages)
+- Meta Embedded Signup (connect existing WhatsApp Business numbers)
 
 ### Partially Implemented
-- Schedule page (UI done, data not fully wired)
-- Appointment creation (missing conflict validation)
-- WhatsApp sending (Twilio client exists, template messages need setup)
+- WhatsApp template messages (need Twilio Content setup)
+- Daily schedule summaries (task not yet created)
+- New booking notifications to owner
 
 ### Not Implemented
-- Background tasks (Celery) - `app/tasks/` is empty
-- Appointment reminders
-- Daily schedule summaries
-- WhatsApp onboarding flow (owner setup via chat)
-- Embedded Signup (Meta) - currently using Twilio
+- Create/Edit appointment modals in dashboard (deferred - most bookings via WhatsApp)
+- Custom domain configuration (api.yume.mx, app.yume.mx)
 
 ## Key Files
 
@@ -191,9 +199,12 @@ NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
 | `app/api/v1/webhooks.py` | Twilio webhook handler |
 | `app/services/message_router.py` | Staff/customer routing |
 | `app/services/conversation.py` | AI orchestration |
-| `app/services/scheduling.py` | Availability calculation |
+| `app/services/scheduling.py` | Availability calculation + conflict validation |
+| `app/services/onboarding.py` | WhatsApp onboarding flow for new businesses |
 | `app/ai/tools.py` | AI tool definitions |
 | `app/ai/prompts.py` | System prompts (Spanish) |
+| `app/tasks/celery_app.py` | Celery configuration + beat schedule |
+| `app/tasks/reminders.py` | 24-hour appointment reminder tasks |
 | `frontend/src/providers/AuthProvider.tsx` | Auth context |
 | `frontend/src/lib/api/client.ts` | Axios with dual token handling |
 
