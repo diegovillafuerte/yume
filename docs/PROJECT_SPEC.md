@@ -187,17 +187,17 @@ Yume differentiators:
 - **ORM:** SQLAlchemy 2.0 (async)
 - **Migrations:** Alembic
 - **Task Queue:** Redis + Celery (for reminders, async jobs)
-- **AI/LLM:** OpenAI GPT API (for conversational AI)
+- **AI/LLM:** OpenAI GPT-5.2 (for conversational AI)
 
 **WhatsApp Integration:**
-- **API:** Meta WhatsApp Cloud API (direct integration, no BSP)
-- **Onboarding:** Embedded Signup with Coexistence flow
-- **Webhooks:** Receive messages via Meta webhook
+- **API:** Twilio WhatsApp API
+- **Onboarding:** Meta Embedded Signup for connecting existing WhatsApp Business numbers
+- **Webhooks:** Receive messages via Twilio webhook
 
-**Infrastructure (initial):**
-- **Hosting:** Railway, Render, or Fly.io (simple PaaS to start)
-- **Database:** Managed Postgres (Supabase, Railway, or Neon)
-- **Redis:** Managed Redis (Upstash or Railway)
+**Infrastructure (deployed on Railway):**
+- **Hosting:** Railway (backend + frontend deployed)
+- **Database:** Railway PostgreSQL
+- **Redis:** Railway Redis
 - **Secrets:** Environment variables (12-factor style)
 
 **Frontend (later, not v1 priority):**
@@ -485,80 +485,54 @@ GET    /api/v1/admin/activity             # Activity feed
 
 ### WhatsApp Integration Details
 
-**Meta Cloud API Direct Integration:**
+**Twilio WhatsApp API Integration:**
 
-1. **Embedded Signup with Coexistence:**
-   - We host the Embedded Signup flow (Meta's JavaScript SDK)
-   - Business owner logs into Facebook, selects their WhatsApp Business App number
-   - They scan a QR code in their WhatsApp Business App
-   - We receive access token and phone number ID
-   - Their existing number now works with our API AND their app simultaneously
+1. **Number Provisioning (Hybrid Approach):**
+   - Yume provisions dedicated Twilio WhatsApp numbers for each business
+   - Business is live immediately with their Yume-provisioned number
+   - Optional: Connect existing WhatsApp Business number via Meta Embedded Signup
+   - Multi-business routing based on phone_number_id in webhook
 
 2. **Webhook Setup:**
-   - Register webhook URL with Meta: `https://api.yume.mx/api/v1/webhooks/whatsapp`
-   - Subscribe to: `messages`, `message_status`, `message_template_status`
-   - Verify webhook with challenge/response
+   - Register webhook URL with Twilio: `https://api.yume.mx/api/v1/webhooks/whatsapp`
+   - Twilio sends webhook for incoming messages and status updates
+   - Each business's provisioned number points to same webhook endpoint
 
 3. **Receiving Messages:**
    ```python
-   # Webhook payload structure (simplified)
+   # Twilio webhook payload (form data)
    {
-       "object": "whatsapp_business_account",
-       "entry": [{
-           "id": "WABA_ID",
-           "changes": [{
-               "field": "messages",
-               "value": {
-                   "messaging_product": "whatsapp",
-                   "metadata": {
-                       "phone_number_id": "PHONE_NUMBER_ID"
-                   },
-                   "contacts": [{"wa_id": "521234567890", "profile": {"name": "Juan"}}],
-                   "messages": [{
-                       "from": "521234567890",
-                       "id": "MESSAGE_ID",
-                       "timestamp": "1234567890",
-                       "type": "text",
-                       "text": {"body": "Hola, quiero una cita"}
-                   }]
-               }
-           }]
-       }]
+       "MessageSid": "SM...",
+       "From": "whatsapp:+521234567890",
+       "To": "whatsapp:+14155238886",  # Business's Twilio number
+       "Body": "Hola, quiero una cita",
+       "NumMedia": "0"
    }
    ```
 
 4. **Sending Messages:**
    ```python
-   # Send text message
-   POST https://graph.facebook.com/v18.0/{phone_number_id}/messages
-   {
-       "messaging_product": "whatsapp",
-       "to": "521234567890",
-       "type": "text",
-       "text": {"body": "¡Hola! Claro, ¿qué servicio te gustaría?"}
-   }
-   
+   # Send text message via Twilio
+   from twilio.rest import Client
+
+   client = Client(account_sid, auth_token)
+   message = client.messages.create(
+       from_='whatsapp:+14155238886',  # Twilio number
+       body='¡Hola! Claro, ¿qué servicio te gustaría?',
+       to='whatsapp:+521234567890'
+   )
+
    # Send template message (for notifications outside 24h window)
-   POST https://graph.facebook.com/v18.0/{phone_number_id}/messages
-   {
-       "messaging_product": "whatsapp",
-       "to": "521234567890",
-       "type": "template",
-       "template": {
-           "name": "appointment_reminder",
-           "language": {"code": "es_MX"},
-           "components": [{
-               "type": "body",
-               "parameters": [
-                   {"type": "text", "text": "mañana a las 3:00 PM"},
-                   {"type": "text", "text": "Corte de cabello"}
-               ]
-           }]
-       }
-   }
+   # Requires pre-approved template in Twilio console
+   message = client.messages.create(
+       from_='whatsapp:+14155238886',
+       content_sid='HXXXXXXXXX',  # Template content SID
+       content_variables='{"1":"mañana a las 3:00 PM","2":"Corte de cabello"}',
+       to='whatsapp:+521234567890'
+   )
    ```
 
-5. **Template Messages Needed (submit to Meta for approval):**
+5. **Template Messages Needed (submit to Twilio/Meta for approval):**
    - `appointment_confirmation` - Sent when appointment is booked
    - `appointment_reminder` - Sent 24h before appointment
    - `appointment_cancelled` - Sent when appointment is cancelled
@@ -584,7 +558,7 @@ class ConversationHandler:
 
         # Call GPT with function calling
         response = await self.client.chat.completions.create(
-            model="gpt-4.1",
+            model="gpt-5.2",
             max_tokens=1024,
             messages=[
                 {"role": "system", "content": system_prompt},
@@ -1447,17 +1421,17 @@ These requirements apply to the entire system.
 
 ## 6. Integration Requirements
 
-### 6.1 WhatsApp Cloud API (Meta)
+### 6.1 WhatsApp API (Twilio)
 | # | Requirement | Status |
 |---|-------------|--------|
-| 6.1.1 | Webhook endpoint for receiving messages (POST) | [ ] |
-| 6.1.2 | Webhook verification endpoint (GET) | [ ] |
-| 6.1.3 | Send text messages via Cloud API | [ ] |
-| 6.1.4 | Send template messages via Cloud API | [ ] |
-| 6.1.5 | Embedded Signup flow for connecting business numbers | [ ] |
-| 6.1.6 | Store phone_number_id and waba_id after signup | [ ] |
+| 6.1.1 | Webhook endpoint for receiving messages (POST) | [x] |
+| 6.1.2 | Webhook verification endpoint (GET) | [x] |
+| 6.1.3 | Send text messages via Twilio API | [x] |
+| 6.1.4 | Send template messages via Twilio API | [ ] |
+| 6.1.5 | Meta Embedded Signup for connecting existing business numbers | [x] |
+| 6.1.6 | Twilio number provisioning for new businesses | [x] |
 | 6.1.7 | Handle message status updates (sent, delivered, read) | [ ] |
-| 6.1.8 | Mock mode for local development without Meta credentials | [ ] |
+| 6.1.8 | Mock mode for local development without Twilio credentials | [ ] |
 
 ### 6.2 Message Templates (Meta Approved)
 | # | Requirement | Status |
@@ -1469,17 +1443,17 @@ These requirements apply to the entire system.
 | 6.2.5 | magic_link template created | [ ] |
 | 6.2.6 | All templates approved by Meta | [ ] |
 
-### 6.3 AI/LLM Integration
+### 6.3 AI/LLM Integration (GPT-5.2)
 | # | Requirement | Status |
 |---|-------------|--------|
-| 6.3.1 | OpenAI GPT API client implemented | [ ] |
-| 6.3.2 | Tool calling for booking operations | [ ] |
-| 6.3.3 | Separate tool sets for customer vs staff | [ ] |
-| 6.3.4 | System prompts in Mexican Spanish | [ ] |
-| 6.3.5 | Conversation history management | [ ] |
-| 6.3.6 | Context injection (services, hours, customer history) | [ ] |
+| 6.3.1 | OpenAI GPT-5.2 API client implemented | [x] |
+| 6.3.2 | Tool calling for booking operations | [x] |
+| 6.3.3 | Separate tool sets for customer vs staff | [x] |
+| 6.3.4 | System prompts in Mexican Spanish | [x] |
+| 6.3.5 | Conversation history management | [x] |
+| 6.3.6 | Context injection (services, hours, customer history) | [x] |
 | 6.3.7 | Fallback when API key not configured | [ ] |
-| 6.3.8 | Tool execution loop (AI → tool → AI → response) | [ ] |
+| 6.3.8 | Tool execution loop (AI → tool → AI → response) | [x] |
 
 ### 6.4 Background Tasks (Celery)
 | # | Requirement | Status |
@@ -1495,29 +1469,29 @@ These requirements apply to the entire system.
 
 ## 7. Infrastructure Requirements
 
-### 7.1 Database
+### 7.1 Database (Railway PostgreSQL)
 | # | Requirement | Status |
 |---|-------------|--------|
-| 7.1.1 | PostgreSQL 15+ deployed | [ ] |
-| 7.1.2 | Alembic migrations working | [ ] |
-| 7.1.3 | All entity migrations created | [ ] |
+| 7.1.1 | PostgreSQL 15+ deployed on Railway | [x] |
+| 7.1.2 | Alembic migrations working | [x] |
+| 7.1.3 | All entity migrations created | [x] |
 | 7.1.4 | Indexes on frequently queried fields | [ ] |
 | 7.1.5 | Database backups configured | [ ] |
 
-### 7.2 Redis
+### 7.2 Redis (Railway)
 | # | Requirement | Status |
 |---|-------------|--------|
-| 7.2.1 | Redis deployed for Celery broker | [ ] |
-| 7.2.2 | Redis connection handling | [ ] |
+| 7.2.1 | Redis deployed on Railway | [x] |
+| 7.2.2 | Redis connection handling | [x] |
 
-### 7.3 Deployment
+### 7.3 Deployment (Railway)
 | # | Requirement | Status |
 |---|-------------|--------|
-| 7.3.1 | Backend deployed and accessible | [ ] |
-| 7.3.2 | Frontend deployed and accessible | [ ] |
-| 7.3.3 | HTTPS configured | [ ] |
+| 7.3.1 | Backend deployed and accessible on Railway | [x] |
+| 7.3.2 | Frontend deployed and accessible on Railway | [x] |
+| 7.3.3 | HTTPS configured | [x] |
 | 7.3.4 | Domain configured (api.yume.mx, app.yume.mx) | [ ] |
-| 7.3.5 | Environment variables configured | [ ] |
+| 7.3.5 | Environment variables configured | [x] |
 | 7.3.6 | Celery worker running | [ ] |
 
 ### 7.4 Monitoring

@@ -2,20 +2,23 @@
 
 This document tracks progress toward production readiness. Requirements are from `docs/PROJECT_SPEC.md`.
 
-**Last Updated:** 2026-01-26
+**Last Updated:** 2026-01-27
 
 ---
 
 ## Current Status
 
-**Phase:** Phase 2 Preparation
-**Estimated Completion:** ~75-80% of core functionality implemented
+**Phase:** Production
+**Estimated Completion:** ~85% of core functionality implemented
 **Blockers:** None currently
+**Deployment:** Railway (backend, frontend, PostgreSQL, Redis)
+**LLM:** OpenAI GPT-5.2
+**WhatsApp:** Twilio WhatsApp API
 
 ### What's Working
-- Backend API (57 endpoints)
-- Database models (14 entities)
-- AI conversation with tool calling (customer + staff flows)
+- Backend API (57 endpoints) - deployed on Railway
+- Database models (14 entities) - Railway PostgreSQL
+- AI conversation with GPT-5.2 tool calling (customer + staff flows)
 - Message routing (staff vs customer identification)
 - Availability slot calculation
 - Appointment conflict validation (double-booking prevention)
@@ -24,6 +27,9 @@ This document tracks progress toward production readiness. Requirements are from
 - Frontend: Schedule page with appointment viewing, filtering, and actions
 - Magic link authentication
 - Celery background tasks with 24-hour appointment reminders
+- Twilio WhatsApp integration (send/receive messages)
+- Meta Embedded Signup (connect existing WhatsApp Business numbers)
+- Twilio number provisioning (provision new numbers for businesses)
 
 ### What's Not Working
 - Daily schedule summary task (Phase 3.3)
@@ -415,22 +421,22 @@ Phase 1 established the core architecture. All items below are implemented.
 
 **Acceptance:** Errors are tracked and handled gracefully.
 
-### 7.3 Deployment Setup
+### 7.3 Deployment Setup ✅ COMPLETE
 **Priority:** HIGH
 **Requirements:** 7.3.x
 
-- [ ] Choose hosting provider (Railway, Render, Fly.io)
-- [ ] Set up managed PostgreSQL
-- [ ] Set up managed Redis
-- [ ] Configure environment variables
+- [x] Choose hosting provider → Railway
+- [x] Set up managed PostgreSQL → Railway PostgreSQL
+- [x] Set up managed Redis → Railway Redis
+- [x] Configure environment variables
 - [ ] Set up CI/CD pipeline
 - [ ] Configure domain (api.yume.mx, app.yume.mx)
-- [ ] Set up SSL certificates
-- [ ] Deploy backend
-- [ ] Deploy frontend
-- [ ] Deploy Celery worker
+- [x] Set up SSL certificates → Railway provides HTTPS
+- [x] Deploy backend
+- [x] Deploy frontend
+- [ ] Deploy Celery worker (runs locally for now)
 
-**Acceptance:** System deployed and accessible on production domain.
+**Acceptance:** System deployed and accessible on Railway URLs.
 
 ### 7.4 Monitoring
 **Priority:** MEDIUM
@@ -526,16 +532,16 @@ This maps PROJECT_SPEC.md requirements to implementation tasks.
 |-----|-------------|--------|-------|
 | 6.1.x | WhatsApp API | ✅ Twilio implemented | 1 |
 | 6.2.x | Message templates | ❌ Need Twilio Content setup | 3.x |
-| 6.3.x | AI/LLM | ✅ OpenAI done | 1 |
-| 6.4.x | Background tasks | ❌ Celery not set up | 3.1 |
+| 6.3.x | AI/LLM | ✅ GPT-5.2 implemented | 1 |
+| 6.4.x | Background tasks | ✅ Celery done | 3.1 |
 
 ### 7. Infrastructure Requirements
 
 | Req | Description | Status | Phase |
 |-----|-------------|--------|-------|
-| 7.1.x | Database | ✅ Local, need prod | 7.3 |
-| 7.2.x | Redis | ✅ Local, need prod | 7.3 |
-| 7.3.x | Deployment | ❌ Not deployed | 7.3 |
+| 7.1.x | Database | ✅ Railway PostgreSQL | 7.3 |
+| 7.2.x | Redis | ✅ Railway Redis | 7.3 |
+| 7.3.x | Deployment | ✅ Railway (backend + frontend) | 7.3 |
 | 7.4.x | Monitoring | ❌ Not set up | 7.4 |
 
 ---
@@ -562,6 +568,9 @@ Based on dependencies and business value:
 
 ## Notes for Next Session
 
+- **Deployed on Railway:** Backend, frontend, PostgreSQL, Redis all running
+- **LLM:** Using GPT-5.2 for all AI conversations
+- **WhatsApp:** Using Twilio API (not Meta direct)
 - Phase 2 Core (2.1-2.4) and Phase 3 Core (3.1, 3.2) and Phase 5 now COMPLETE
 - Onboarding flow: Business owners can set up via WhatsApp conversation in <15 min
 - Customer booking flow enhanced: Faster booking with flexible date interpretation
@@ -574,6 +583,7 @@ Based on dependencies and business value:
   - For MVP: Use Meta Embedded Signup (existing) or manual Twilio setup
   - For scale: Integrate `twilio_provisioning.py` to auto-provision numbers
 - Create/Edit appointment modals were deferred - most appointments come via WhatsApp
+- Custom domain (api.yume.mx, app.yume.mx) still needs to be configured
 
 ---
 
@@ -581,6 +591,8 @@ Based on dependencies and business value:
 
 | Date | Changes |
 |------|---------|
+| 2026-01-27 | Updated PROJECT_SPEC.md: Railway deployment, Twilio WhatsApp API, GPT-5.2 |
+| 2026-01-27 | Completed Phase 7.3: Deployed on Railway (backend, frontend, PostgreSQL, Redis) |
 | 2026-01-26 | Completed Phase 5.1: Full onboarding conversation flow with staff collection |
 | 2026-01-26 | Completed Phase 5.2: Twilio number provisioning service + Meta Embedded Signup |
 | 2026-01-26 | Enhanced Phase 2.4: Staff tools with better date handling and schedule display |
