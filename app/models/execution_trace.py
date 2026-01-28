@@ -97,7 +97,7 @@ class ExecutionTrace(Base, UUIDMixin, TimestampMixin):
         nullable=False,
         default=dict,
     )
-    metadata: Mapped[dict] = mapped_column(
+    trace_metadata: Mapped[dict] = mapped_column(
         JSONB,
         nullable=False,
         default=dict,

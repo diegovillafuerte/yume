@@ -95,7 +95,7 @@ class ExecutionTracer:
             "latency_ms": latency_ms,
             "input_data": input_data,
             "output_data": output_data,
-            "metadata": metadata,
+            "trace_metadata": metadata,
             "is_error": is_error,
             "error_message": error_message,
         })
@@ -133,7 +133,7 @@ class ExecutionTracer:
                 latency_ms=trace_data["latency_ms"],
                 input_data=trace_data["input_data"],
                 output_data=trace_data["output_data"],
-                metadata=trace_data["metadata"],
+                trace_metadata=trace_data["trace_metadata"],
                 is_error=trace_data["is_error"],
                 error_message=trace_data["error_message"],
             )

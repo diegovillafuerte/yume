@@ -283,7 +283,7 @@ async def get_exchange_traces(
             "latency_ms": t.latency_ms,
             "input_data": t.input_data,
             "output_data": t.output_data,
-            "metadata": t.metadata,
+            "metadata": t.trace_metadata,
             "is_error": t.is_error,
             "error_message": t.error_message,
             # Extract useful preview fields
@@ -321,7 +321,7 @@ async def get_trace_detail(
         "latency_ms": trace.latency_ms,
         "input_data": trace.input_data,
         "output_data": trace.output_data,
-        "metadata": trace.metadata,
+        "metadata": trace.trace_metadata,
         "is_error": trace.is_error,
         "error_message": trace.error_message,
     }
