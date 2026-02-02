@@ -35,10 +35,7 @@ services:
       - key: ADMIN_MASTER_PASSWORD
         sync: false  # Must set manually in dashboard
       - key: FRONTEND_URL
-        fromService:
-          name: yume-frontend
-          type: web
-          property: url
+        sync: false  # Set manually: https://yume-frontend.onrender.com
       - key: TWILIO_ACCOUNT_SID
         sync: false  # Must set manually in dashboard
       - key: TWILIO_AUTH_TOKEN
@@ -135,3 +132,4 @@ services:
     region: oregon
     plan: free  # Change to starter for production
     maxmemoryPolicy: noeviction
+    ipAllowList: []  # Allow only Render services (internal network)
