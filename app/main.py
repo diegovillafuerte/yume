@@ -19,7 +19,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Startup
     print("Starting Yume API...")
     print(f"Environment: {settings.app_env}")
-    print(f"Database: {settings.database_url.split('@')[-1]}")  # Hide credentials
+    print(f"Database: {settings.async_database_url.split('@')[-1]}")  # Hide credentials
 
     # Test database connection
     try:
@@ -50,9 +50,10 @@ allowed_origins = [
     "http://localhost:3000",  # Local development
 ]
 
-# Add Railway preview deployments in production
+# Add Railway and Render preview deployments in production
 if not settings.is_development:
     allowed_origins.append("https://*.railway.app")
+    allowed_origins.append("https://*.onrender.com")
 
 app.add_middleware(
     CORSMiddleware,

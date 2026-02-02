@@ -24,7 +24,7 @@ if config.config_file_name is not None:
 
 # Set the SQLAlchemy URL from settings
 settings = get_settings()
-config.set_main_option("sqlalchemy.url", settings.database_url)
+config.set_main_option("sqlalchemy.url", settings.async_database_url)
 
 # add your model's MetaData object here
 # for 'autogenerate' support

@@ -25,7 +25,7 @@ from app.models import (
 
 
 # Use a test database
-TEST_DATABASE_URL = settings.database_url.replace("/yume", "/yume_test")
+TEST_DATABASE_URL = settings.async_database_url.replace("/yume", "/yume_test")
 
 
 @pytest.fixture(scope="session")

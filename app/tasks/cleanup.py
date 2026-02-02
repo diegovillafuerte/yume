@@ -31,7 +31,7 @@ def cleanup_old_execution_traces(days_to_keep: int = 30) -> dict:
         from app.models import ExecutionTrace
 
         settings = get_settings()
-        engine = create_async_engine(settings.database_url)
+        engine = create_async_engine(settings.async_database_url)
         session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
         cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_to_keep)

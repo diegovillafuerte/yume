@@ -1,0 +1,137 @@
+# Render Infrastructure as Code
+# Deploy all services at once via Dashboard → New → Blueprint
+
+databases:
+  - name: yume-db
+    region: oregon
+    plan: free  # Change to starter for production
+    databaseName: yume
+    user: yume
+
+services:
+  # FastAPI Backend
+  - type: web
+    name: yume-backend
+    runtime: docker
+    region: oregon
+    plan: free  # Change to starter for production
+    healthCheckPath: /health
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: yume-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          name: yume-redis
+          type: redis
+          property: connectionString
+      - key: OPENAI_API_KEY
+        sync: false  # Must set manually in dashboard
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: ADMIN_MASTER_PASSWORD
+        sync: false  # Must set manually in dashboard
+      - key: FRONTEND_URL
+        fromService:
+          name: yume-frontend
+          type: web
+          property: url
+      - key: TWILIO_ACCOUNT_SID
+        sync: false  # Must set manually in dashboard
+      - key: TWILIO_AUTH_TOKEN
+        sync: false  # Must set manually in dashboard
+      - key: TWILIO_WHATSAPP_NUMBER
+        value: whatsapp:+14155238886
+      - key: META_APP_ID
+        sync: false  # Must set manually in dashboard
+      - key: META_APP_SECRET
+        sync: false  # Must set manually in dashboard
+      - key: META_WEBHOOK_VERIFY_TOKEN
+        value: yume-webhook-token
+      - key: META_API_VERSION
+        value: v18.0
+
+  # Next.js Frontend
+  - type: web
+    name: yume-frontend
+    runtime: node
+    region: oregon
+    plan: free  # Change to starter for production
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    startCommand: npm run start
+    envVars:
+      - key: NEXT_PUBLIC_API_URL
+        sync: false  # Set manually: https://yume-backend.onrender.com/api/v1
+      - key: NEXT_PUBLIC_META_APP_ID
+        sync: false  # Optional: for Meta Embedded Signup
+
+  # Celery Worker (Background Tasks)
+  - type: worker
+    name: yume-worker
+    runtime: docker
+    region: oregon
+    plan: free  # Change to starter for production
+    dockerCommand: celery -A app.tasks.celery_app worker --loglevel=info
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: yume-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          name: yume-redis
+          type: redis
+          property: connectionString
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: JWT_SECRET_KEY
+        fromService:
+          name: yume-backend
+          type: web
+          envVarKey: JWT_SECRET_KEY
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: TWILIO_WHATSAPP_NUMBER
+        value: whatsapp:+14155238886
+
+  # Celery Beat (Scheduler)
+  - type: worker
+    name: yume-beat
+    runtime: docker
+    region: oregon
+    plan: free  # Change to starter for production
+    dockerCommand: celery -A app.tasks.celery_app beat --loglevel=info
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: yume-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          name: yume-redis
+          type: redis
+          property: connectionString
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: JWT_SECRET_KEY
+        fromService:
+          name: yume-backend
+          type: web
+          envVarKey: JWT_SECRET_KEY
+
+  # Redis (Managed)
+  - type: redis
+    name: yume-redis
+    region: oregon
+    plan: free  # Change to starter for production
+    maxmemoryPolicy: noeviction

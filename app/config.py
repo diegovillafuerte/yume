@@ -24,6 +24,18 @@ class Settings(BaseSettings):
     # Database
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/yume"
 
+    @property
+    def async_database_url(self) -> str:
+        """Get database URL with asyncpg driver.
+
+        Render/Railway provide postgresql:// but SQLAlchemy async needs postgresql+asyncpg://
+        This property ensures the correct driver is always used.
+        """
+        url = self.database_url
+        if url.startswith("postgresql://"):
+            url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        return url
+
     # Redis
     redis_url: str = "redis://localhost:6379/0"
 

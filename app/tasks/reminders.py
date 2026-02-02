@@ -28,7 +28,7 @@ def check_and_send_reminders() -> dict:
         from app.models import Appointment, AppointmentStatus
 
         settings = get_settings()
-        engine = create_async_engine(settings.database_url)
+        engine = create_async_engine(settings.async_database_url)
         session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
         now = datetime.now(timezone.utc)
@@ -84,7 +84,7 @@ def send_appointment_reminder(appointment_id: str) -> dict:
         from app.models import Appointment, Customer, Organization, ServiceType
 
         settings = get_settings()
-        engine = create_async_engine(settings.database_url)
+        engine = create_async_engine(settings.async_database_url)
         session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
         apt_uuid = UUID(appointment_id)

@@ -28,7 +28,7 @@ settings = get_settings()
 async def setup_organization():
     """Create initial organization with basic data."""
     # Create async engine
-    engine = create_async_engine(settings.database_url, echo=True)
+    engine = create_async_engine(settings.async_database_url, echo=True)
     async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
     async with async_session() as session:
