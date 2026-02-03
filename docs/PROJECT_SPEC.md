@@ -750,26 +750,749 @@ def build_system_prompt(self) -> str:
         return self.build_customer_system_prompt()
 ```
 
-**Message Routing Logic:**
+### Message Routing Architecture
 
-When a message arrives via webhook, we need to determine if it's from a customer or staff:
+Yume operates two distinct WhatsApp channels:
+
+1. **Yume's Central Number** - For B2B interactions (business onboarding and management)
+2. **Business Numbers** - For B2C interactions (end customers) and staff of that specific business
+
+Every incoming WhatsApp message is routed based on:
+- **Which number received the message** (recipient)
+- **Who sent the message** (sender identification)
+
+#### Two-Channel Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         YUME MESSAGE ROUTING                                 │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│   ┌───────────────────────┐         ┌───────────────────────────────────┐  │
+│   │  YUME CENTRAL NUMBER  │         │     BUSINESS NUMBERS (per biz)    │  │
+│   │                       │         │                                   │  │
+│   │  Purpose: B2B         │         │  Purpose: B2C + Staff             │  │
+│   │  - Business onboarding│         │  - End customer bookings          │  │
+│   │  - Business management│         │  - Staff management               │  │
+│   │                       │         │                                   │  │
+│   │  Recipients:          │         │  Recipients:                      │  │
+│   │  - New businesses     │         │  - Customers of that business     │  │
+│   │  - Existing owners    │         │  - Staff of that business         │  │
+│   │  - Existing staff     │         │                                   │  │
+│   └───────────────────────┘         └───────────────────────────────────┘  │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Key Routing Principles:**
+
+1. **Staff registration is business-specific.** Maria can be staff at "Salon A" but is just a customer at "Barber Shop B".
+
+2. **Management access is flexible.** Business owners/staff can manage their business via:
+   - Yume's central WhatsApp number
+   - Their own business WhatsApp number
+   - The web portal
+
+3. **Multi-business staff use direct messaging.** If someone is staff at multiple businesses, they must message each business number directly (not the central number).
+
+#### Routing Flowchart
+
+```mermaid
+flowchart TD
+    START([Incoming WhatsApp Message]) --> CHECK_RECIPIENT{Which number<br/>received this?}
+
+    CHECK_RECIPIENT -->|Yume Central Number| CENTRAL_FLOW
+    CHECK_RECIPIENT -->|Business Number X| BUSINESS_FLOW
+
+    subgraph CENTRAL_FLOW [Yume Central Number Flow]
+        C1{Sender in DB?}
+        C1 -->|No / Incomplete Onboarding| CASE1[Case 1: Business Onboarding]
+        C1 -->|Yes - Registered| C2{Registered to<br/>how many businesses?}
+        C2 -->|Exactly 1| CASE2A[Case 2a: Business Management]
+        C2 -->|Multiple| CASE2B[Case 2b: Redirect Message]
+    end
+
+    subgraph BUSINESS_FLOW [Business Number X Flow]
+        B1{Sender is pre-registered<br/>staff for Business X?}
+        B1 -->|Yes| B2{First message<br/>from this staff?}
+        B2 -->|Yes| CASE3[Case 3: Staff Onboarding]
+        B2 -->|No| CASE4[Case 4: Business Management]
+        B1 -->|No| CASE5[Case 5: End Customer]
+    end
+
+    CASE1 --> FLOW1([Business Onboarding Flow])
+    CASE2A --> FLOW2([Business Management Flows])
+    CASE2B --> MSG2B([Send: Text your business directly])
+    CASE3 --> FLOW3([Staff Onboarding Flow])
+    CASE4 --> FLOW2
+    CASE5 --> FLOW5([End Customer Flows])
+```
+
+#### Routing Table
+
+| Case | Recipient | Sender Identification | Route To | Actions Available |
+|------|-----------|----------------------|----------|-------------------|
+| **1** | Yume Central | Unknown OR incomplete onboarding | Business Onboarding Flow | Gather info, provision number, complete setup |
+| **2a** | Yume Central | Staff/owner of exactly 1 business | Business Management Flows | All management actions per permissions |
+| **2b** | Yume Central | Staff/owner of multiple businesses | Redirect Message | Send: "You're registered to multiple businesses, please text them directly" |
+| **3** | Business Number X | Pre-registered staff (first message) | Staff Onboarding Flow | Collect name, availability, show tutorial |
+| **4** | Business Number X | Known staff for Business X | Business Management Flows | All management actions per permissions |
+| **5** | Business Number X | Anyone not staff of Business X | End Customer Flows | Booking, inquiry, modify, cancel |
+
+#### Routing Pseudocode
 
 ```python
-async def route_incoming_message(phone_number_id: str, sender_phone: str, message: str):
-    # 1. Find the organization by the WhatsApp phone number ID
-    org = await get_org_by_whatsapp_phone_id(phone_number_id)
-    
-    # 2. Check if sender is a registered staff member
-    staff = await get_staff_by_phone(org.id, sender_phone)
-    
-    if staff:
-        # This is a staff member - use staff conversation handler
-        return await handle_staff_message(org, staff, message)
+async def route_message(recipient_number: str, sender_phone: str, message: str):
+    """Main message routing logic."""
+
+    if recipient_number == YUME_CENTRAL_NUMBER:
+        # Central number flow
+        registrations = await get_staff_registrations(sender_phone)
+
+        if len(registrations) == 0:
+            # Check for incomplete onboarding
+            onboarding = await get_onboarding_session(sender_phone)
+            return handle_business_onboarding(sender_phone, message, onboarding)
+
+        elif len(registrations) == 1:
+            # Single business - allow management
+            business = registrations[0].business
+            staff = registrations[0]
+            return handle_business_management(business, staff, message)
+
+        else:
+            # Multiple businesses - redirect
+            return send_redirect_message(sender_phone, registrations)
+
     else:
-        # This is a customer - use customer conversation handler
-        customer = await get_or_create_customer(org.id, sender_phone)
-        return await handle_customer_message(org, customer, message)
+        # Business number flow
+        business = await get_business_by_whatsapp_number(recipient_number)
+        staff = await get_staff_by_phone(business.id, sender_phone)
+
+        if staff:
+            if staff.is_first_message:
+                return handle_staff_onboarding(business, staff, message)
+            else:
+                return handle_business_management(business, staff, message)
+        else:
+            customer = await get_or_create_customer(business.id, sender_phone)
+            return handle_end_customer(business, customer, message)
 ```
+
+#### Quick Reference: Routing Decision Tree
+
+```
+Incoming Message
+│
+├── Recipient = Yume Central Number?
+│   ├── Sender = Unknown/Incomplete? → BUSINESS ONBOARDING
+│   ├── Sender = Staff of 1 business? → BUSINESS MANAGEMENT
+│   └── Sender = Staff of 2+ businesses? → REDIRECT MESSAGE
+│
+└── Recipient = Business Number X?
+    ├── Sender = Pre-registered staff (new)? → STAFF ONBOARDING
+    ├── Sender = Known staff? → BUSINESS MANAGEMENT
+    └── Sender = Anyone else? → END CUSTOMER FLOWS
+```
+
+---
+
+### State Machine Flows
+
+All flows use state machines to track progress. Each state represents a step in the conversation.
+
+**Universal State Patterns:**
+
+1. **Abandoned State:** Triggered after X time of inactivity. The system remembers the last active state for resumption.
+
+2. **State Naming Convention:**
+   - Active states use present progressive: `collecting_service`, `confirming_summary`
+   - Completed states use past tense: `gave_order`, `confirmed`
+
+#### 1. Business Onboarding Flow
+
+**Trigger:** Message to Yume Central from unknown number or incomplete onboarding.
+
+```mermaid
+stateDiagram-v2
+    [*] --> initiated
+    initiated --> collecting_business_info: Start conversation
+    collecting_business_info --> collecting_owner_info: Got name, type, services
+    collecting_owner_info --> provisioning_number: Got owner name, contact
+    provisioning_number --> completed: Number provisioned successfully
+    completed --> [*]
+
+    collecting_business_info --> abandoned: Timeout
+    collecting_owner_info --> abandoned: Timeout
+    abandoned --> collecting_business_info: Resume (remembered state)
+    abandoned --> collecting_owner_info: Resume (remembered state)
+```
+
+**States:**
+
+| State | Description | Data Collected |
+|-------|-------------|----------------|
+| `initiated` | Conversation started | - |
+| `collecting_business_info` | Gathering business details | name, type, services offered |
+| `collecting_owner_info` | Gathering owner details | owner name, contact info |
+| `provisioning_number` | Automatic: creating WhatsApp number | (system action) |
+| `completed` | Onboarding complete, business is live | - |
+| `abandoned` | Timeout, remembers last state | last_active_state, timestamp |
+
+#### 2. Staff Onboarding Flow
+
+**Trigger:** First message from pre-registered staff to their business number.
+
+```mermaid
+stateDiagram-v2
+    [*] --> initiated
+    initiated --> collecting_name: Welcome message sent
+    collecting_name --> collecting_availability: Got name
+    collecting_availability --> showing_tutorial: Got availability
+    showing_tutorial --> completed: Viewed tutorial
+    completed --> [*]
+
+    collecting_name --> abandoned: Timeout
+    collecting_availability --> abandoned: Timeout
+    showing_tutorial --> abandoned: Timeout
+    abandoned --> collecting_name: Resume
+    abandoned --> collecting_availability: Resume
+    abandoned --> showing_tutorial: Resume
+```
+
+**States:**
+
+| State | Description | Data Collected |
+|-------|-------------|----------------|
+| `initiated` | First message received | - |
+| `collecting_name` | Asking for display name | name |
+| `collecting_availability` | Asking for working hours | day/time preferences |
+| `showing_tutorial` | Showing capabilities | (tutorial acknowledgment) |
+| `completed` | Staff fully onboarded | - |
+| `abandoned` | Timeout with memory | last_active_state |
+
+**On Completion:** Notify admin/owner who invited them.
+
+#### 3. New Booking Flow (End Customer)
+
+**Trigger:** End customer expresses intent to book.
+
+```mermaid
+stateDiagram-v2
+    [*] --> initiated
+    initiated --> collecting_service: Intent detected
+    collecting_service --> collecting_datetime: Service selected
+    collecting_datetime --> collecting_staff_preference: Date/time selected
+    collecting_staff_preference --> collecting_personal_info: Staff selected (if multiple)
+    collecting_datetime --> collecting_personal_info: Skip (single staff)
+    collecting_personal_info --> confirming_summary: Info collected/prefilled
+    confirming_summary --> confirmed: Customer confirms
+    confirmed --> [*]
+
+    collecting_service --> abandoned: Timeout
+    collecting_datetime --> abandoned: Timeout
+    collecting_staff_preference --> abandoned: Timeout
+    collecting_personal_info --> abandoned: Timeout
+    confirming_summary --> abandoned: Timeout
+```
+
+**States:**
+
+| State | Description | Data Collected |
+|-------|-------------|----------------|
+| `initiated` | Booking intent detected | - |
+| `collecting_service` | Asking which service | service_id |
+| `collecting_datetime` | Asking when | date, time slot |
+| `collecting_staff_preference` | Asking who (if multiple staff) | staff_id (optional) |
+| `collecting_personal_info` | Asking name, etc. (prefilled for returning) | name, phone |
+| `confirming_summary` | Showing summary, asking confirmation | - |
+| `confirmed` | Booking created | booking_id |
+| `abandoned` | Timeout with memory | last_active_state |
+
+**Note:** `collecting_staff_preference` is skipped if business has single staff.
+
+**Post-Booking Lifecycle:**
+
+```mermaid
+stateDiagram-v2
+    confirmed --> reminded: 24h before
+    reminded --> pending_attendance: Appointment time
+    pending_attendance --> attended: Business confirms
+    pending_attendance --> no_show: Time passes, no confirmation
+    attended --> prompted_rating: After service
+    prompted_rating --> rated: Rating submitted
+    rated --> closed: Complete
+    no_show --> prompted_reschedule: Ask about reschedule
+    prompted_reschedule --> rescheduled: New booking created
+    prompted_reschedule --> closed: Customer declines
+    no_show --> disputed: Customer claims attended
+    disputed --> attended: Verified
+```
+
+#### 4. Modify Booking Flow (End Customer)
+
+**Trigger:** End customer expresses intent to modify existing booking.
+
+```mermaid
+stateDiagram-v2
+    [*] --> initiated
+    initiated --> identifying_booking: Intent detected
+    identifying_booking --> selecting_modification: Booking identified
+    selecting_modification --> collecting_new_service: Change service
+    selecting_modification --> collecting_new_datetime: Change time
+    selecting_modification --> collecting_new_staff: Change staff
+    collecting_new_service --> confirming_summary
+    collecting_new_datetime --> confirming_summary
+    collecting_new_staff --> confirming_summary
+    confirming_summary --> confirmed: Customer confirms
+    confirmed --> [*]
+```
+
+**States:**
+
+| State | Description | Data Collected |
+|-------|-------------|----------------|
+| `initiated` | Modify intent detected | - |
+| `identifying_booking` | Which booking? (skip if only one active) | booking_id |
+| `selecting_modification` | What to change? | modification_type |
+| `collecting_new_service` | New service selection | new_service_id |
+| `collecting_new_datetime` | New date/time selection | new_datetime |
+| `collecting_new_staff` | New staff selection | new_staff_id |
+| `confirming_summary` | Showing changes, asking confirmation | - |
+| `confirmed` | Modification saved | - |
+
+#### 5. Cancel Booking Flow (End Customer)
+
+**Trigger:** End customer expresses intent to cancel.
+
+```mermaid
+stateDiagram-v2
+    [*] --> initiated
+    initiated --> identifying_booking: Intent detected
+    identifying_booking --> confirming_cancellation: Booking identified
+    confirming_cancellation --> cancelled: Customer confirms
+    cancelled --> [*]
+```
+
+**States:**
+
+| State | Description |
+|-------|-------------|
+| `initiated` | Cancel intent detected |
+| `identifying_booking` | Which booking? (skip if only one) |
+| `confirming_cancellation` | Are you sure? |
+| `cancelled` | Booking cancelled, confirmation sent |
+
+#### 6. Inquiry Flow (End Customer)
+
+**Trigger:** End customer asks about services, hours, prices, etc.
+
+**Type:** Stateless - AI answers from business profile.
+
+No state machine needed. AI responds directly using business data.
+
+#### 7. Give Rating Flow (End Customer)
+
+**Trigger:** System prompts customer after confirmed attendance.
+
+```mermaid
+stateDiagram-v2
+    [*] --> prompted
+    prompted --> collecting_rating: Customer responds
+    collecting_rating --> collecting_feedback: Rating given
+    collecting_feedback --> submitted: Feedback given (optional)
+    collecting_rating --> submitted: Skip feedback
+    submitted --> [*]
+```
+
+**States:**
+
+| State | Description | Data Collected |
+|-------|-------------|----------------|
+| `prompted` | Rating request sent | - |
+| `collecting_rating` | Waiting for 1-5 rating | rating (1-5) |
+| `collecting_feedback` | Optional text feedback | feedback_text (optional) |
+| `submitted` | Rating saved | - |
+
+#### 8. Block Time Slots Flow (Business Management)
+
+**Trigger:** Staff/owner wants to block time off.
+
+```mermaid
+stateDiagram-v2
+    [*] --> initiated
+    initiated --> collecting_date_range: Intent detected
+    collecting_date_range --> collecting_time_range: Dates selected
+    collecting_time_range --> collecting_reason: Times selected
+    collecting_reason --> confirming: Reason given (optional)
+    collecting_time_range --> confirming: Skip reason
+    confirming --> confirmed: User confirms
+    confirmed --> [*]
+```
+
+**States:**
+
+| State | Description | Data Collected |
+|-------|-------------|----------------|
+| `initiated` | Block intent detected | - |
+| `collecting_date_range` | Which date(s)? | start_date, end_date |
+| `collecting_time_range` | Which time(s)? | start_time, end_time |
+| `collecting_reason` | Why? (optional) | reason |
+| `confirming` | Summary and confirmation | - |
+| `confirmed` | Time blocked | - |
+
+#### 9. Change Business Hours Flow (Business Management)
+
+**Trigger:** Owner wants to change operating hours.
+
+```mermaid
+stateDiagram-v2
+    [*] --> initiated
+    initiated --> selecting_days: Intent detected
+    selecting_days --> collecting_new_hours: Days selected
+    collecting_new_hours --> confirming: Hours provided
+    confirming --> confirmed: User confirms
+    confirmed --> [*]
+```
+
+**States:**
+
+| State | Description | Data Collected |
+|-------|-------------|----------------|
+| `initiated` | Change hours intent detected | - |
+| `selecting_days` | All days or specific? | days (list or "all") |
+| `collecting_new_hours` | New open/close times | open_time, close_time |
+| `confirming` | Summary and confirmation | - |
+| `confirmed` | Hours updated | - |
+
+#### 10. Change Service Duration Flow (Business Management)
+
+**Trigger:** Owner wants to change service duration.
+
+```mermaid
+stateDiagram-v2
+    [*] --> initiated
+    initiated --> selecting_service: Intent detected
+    selecting_service --> collecting_new_duration: Service selected
+    collecting_new_duration --> confirming: Duration provided
+    confirming --> confirmed: User confirms
+    confirmed --> [*]
+```
+
+#### 11. Add Staff Flow (Business Management)
+
+**Trigger:** Owner/admin wants to add new staff member.
+
+```mermaid
+stateDiagram-v2
+    [*] --> initiated
+    initiated --> collecting_phone: Intent detected
+    collecting_phone --> collecting_name: Phone provided
+    collecting_name --> collecting_permissions: Name provided
+    collecting_permissions --> confirming: Permissions selected
+    confirming --> confirmed: User confirms
+    confirmed --> [*]
+```
+
+**States:**
+
+| State | Description | Data Collected |
+|-------|-------------|----------------|
+| `initiated` | Add staff intent detected | - |
+| `collecting_phone` | Staff's WhatsApp number | phone_number |
+| `collecting_name` | Staff's display name | name |
+| `collecting_permissions` | Permission level | permission_level |
+| `confirming` | Summary and confirmation | - |
+| `confirmed` | Staff invited, awaiting their onboarding | - |
+
+**On Completion:** Staff is pre-registered. When they message the business number, they enter Staff Onboarding (Case 3).
+
+#### 12. Remove Staff Flow (Business Management)
+
+**Trigger:** Owner/admin wants to remove staff member.
+
+```mermaid
+stateDiagram-v2
+    [*] --> initiated
+    initiated --> selecting_staff: Intent detected
+    selecting_staff --> confirming_removal: Staff selected
+    confirming_removal --> confirmed: User confirms
+    confirmed --> [*]
+```
+
+**States:**
+
+| State | Description | Data Collected |
+|-------|-------------|----------------|
+| `initiated` | Remove staff intent detected | - |
+| `selecting_staff` | Which staff member? | staff_id |
+| `confirming_removal` | Are you sure? | - |
+| `confirmed` | Staff removed | - |
+
+#### 13. Change Staff Permissions Flow (Business Management)
+
+**Trigger:** Owner/admin wants to change staff permissions.
+
+```mermaid
+stateDiagram-v2
+    [*] --> initiated
+    initiated --> selecting_staff: Intent detected
+    selecting_staff --> selecting_new_permissions: Staff selected
+    selecting_new_permissions --> confirming: Permissions selected
+    confirming --> confirmed: User confirms
+    confirmed --> [*]
+```
+
+#### 14. Create Booking (Walk-in/On-Behalf) Flow (Business Management)
+
+**Trigger:** Staff creates booking for a customer (walk-in or phone booking).
+
+```mermaid
+stateDiagram-v2
+    [*] --> initiated
+    initiated --> collecting_customer_phone: Intent detected
+    collecting_customer_phone --> collecting_service: Phone provided
+    collecting_service --> collecting_datetime: Service selected
+    collecting_datetime --> selecting_staff: Date/time selected
+    selecting_staff --> confirming: Staff selected
+    confirming --> confirmed: User confirms
+    confirmed --> [*]
+```
+
+**States:**
+
+| State | Description | Data Collected |
+|-------|-------------|----------------|
+| `initiated` | Create booking intent detected | - |
+| `collecting_customer_phone` | Customer's phone (optional for walk-ins) | phone_number |
+| `collecting_service` | Which service? | service_id |
+| `collecting_datetime` | When? (now for walk-ins) | datetime |
+| `selecting_staff` | Who will serve them? | staff_id |
+| `confirming` | Summary and confirmation | - |
+| `confirmed` | Booking created, customer notified | - |
+
+**On Confirmation:** Customer receives WhatsApp notification about their booking.
+
+#### Stateless Flows (Business Management)
+
+These flows don't require state machines - they're single request/response:
+
+| Flow | Description |
+|------|-------------|
+| **View Schedule** | Returns schedule for specified date/range |
+| **View Stats** | Returns business statistics |
+
+---
+
+### Permission System
+
+#### Permission Levels
+
+| Level | Description | Typical Use |
+|-------|-------------|-------------|
+| `owner` | Full access to everything | Business owner |
+| `admin` | Can manage staff, see all data | Manager, senior staff |
+| `staff` | Can view schedule, create bookings | Regular employees |
+| `viewer` | Read-only access | Assistants, trainees |
+
+#### Permission Matrix
+
+| Action | Owner | Admin | Staff | Viewer |
+|--------|-------|-------|-------|--------|
+| View own schedule | ✅ | ✅ | ✅ | ✅ |
+| View full business schedule | ✅ | ✅ | ✅ | ✅ |
+| Create booking (walk-in) | ✅ | ✅ | ✅ | ❌ |
+| Mark attendance | ✅ | ✅ | ✅ | ❌ |
+| Block own time | ✅ | ✅ | ✅ | ❌ |
+| Cancel appointment | ✅ | ✅ | ✅ | ❌ |
+| View stats | ✅ | ✅ | ❌ | ❌ |
+| Add staff | ✅ | ✅ | ❌ | ❌ |
+| Remove staff | ✅ | ✅ | ❌ | ❌ |
+| Change permissions | ✅ | ❌ | ❌ | ❌ |
+| Change business hours | ✅ | ❌ | ❌ | ❌ |
+| Change service durations | ✅ | ❌ | ❌ | ❌ |
+| Modify services/prices | ✅ | ❌ | ❌ | ❌ |
+
+---
+
+### Number Provisioning
+
+When a new business completes onboarding, Yume automatically provisions a WhatsApp number.
+
+#### Technical Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    YUME WHATSAPP INFRASTRUCTURE                          │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│   ┌─────────────┐     ┌─────────────┐     ┌─────────────────────────┐  │
+│   │    Yume     │     │   Twilio    │     │   Meta Business Suite   │  │
+│   │   Backend   │────▶│    API      │────▶│   (WABA via Twilio)    │  │
+│   └─────────────┘     └─────────────┘     └─────────────────────────┘  │
+│                                                                         │
+│   Single WABA (WhatsApp Business Account) owned by Yume                │
+│   All business numbers registered under this WABA                       │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+#### Provisioning Flow
+
+1. **Business Completes Onboarding** via WhatsApp conversation with Yume
+
+2. **Backend Provisions Number:**
+   ```python
+   async def provision_business_number(business_id: str):
+       # 1. Buy Mexican phone number via Twilio Number API
+       phone_number = await twilio.available_phone_numbers("MX").fetch()
+       purchased = await twilio.incoming_phone_numbers.create(phone_number=phone_number)
+
+       # 2. Register as WhatsApp sender under Yume's WABA
+       sender = await twilio.messaging.senders.create(
+           phone_number=purchased.phone_number,
+           waba_id=YUME_WABA_ID
+       )
+
+       # 3. Configure webhook to point to Yume's central endpoint
+       await twilio.webhooks.create(
+           url=f"{YUME_API_URL}/api/v1/webhooks/whatsapp",
+           phone_number=purchased.phone_number
+       )
+
+       # 4. Map number to business in database
+       await db.businesses.update(
+           business_id,
+           whatsapp_number=purchased.phone_number,
+           whatsapp_number_id=sender.id
+       )
+
+       return purchased.phone_number
+   ```
+
+3. **Business is Live** within minutes
+
+#### Number Provisioning Details
+
+| Aspect | Details |
+|--------|---------|
+| **WABA** | Single verified Meta Business Portfolio owned by Yume |
+| **Number Source** | Mexican numbers via Twilio Number API |
+| **Webhook** | All numbers point to same central webhook endpoint |
+| **Display Name** | Async approval (250 unique customers/day limit is fine) |
+| **Templates** | Pre-approved at WABA level, available instantly |
+| **Rejection Handling** | Auto-retry with variant if display name rejected |
+
+---
+
+### Universal Patterns
+
+#### Abandoned State Pattern
+
+All stateful flows implement the abandoned state pattern:
+
+```python
+class AbandonedStateHandler:
+    TIMEOUT_MINUTES = 30  # Configurable per flow
+
+    async def check_abandoned(self, conversation_id: str):
+        session = await get_session(conversation_id)
+
+        if session.last_message_at < now() - timedelta(minutes=self.TIMEOUT_MINUTES):
+            if session.state not in ['completed', 'abandoned', 'cancelled']:
+                await mark_abandoned(session)
+                return True
+        return False
+
+    async def resume_session(self, conversation_id: str):
+        session = await get_session(conversation_id)
+
+        if session.state == 'abandoned':
+            # Restore to last active state
+            await set_state(session, session.metadata['last_active_state'])
+            return f"Welcome back! Let's continue where we left off..."
+```
+
+#### State Transition Rules
+
+1. **Forward Only (mostly):** States generally progress forward
+2. **Abandon Anywhere:** Any state can transition to `abandoned`
+3. **Resume Preserves Context:** Resuming restores the exact previous state
+4. **Completion is Final:** `completed`, `cancelled`, `closed` are terminal states
+
+---
+
+### Customer Profiles
+
+#### Cross-Business Profiles
+
+Customer profiles are maintained globally (not per-business):
+
+```python
+class CustomerProfile:
+    phone_number: str      # Primary identifier
+    name: str | None       # Learned from any business
+    email: str | None      # If provided
+
+    # Preferences learned across interactions
+    preferred_times: list[str]
+
+    # Business-specific data stored separately
+    business_data: dict[business_id, BusinessCustomerData]
+```
+
+#### Returning Customer Behavior
+
+When a returning customer books:
+
+1. **Prefill Known Info:** Name, preferences auto-populated
+2. **Ask to Confirm:** "Is this still your info, or would you like to change it?"
+3. **Skip If Confident:** If info is recent and verified, skip confirmation
+
+```python
+async def collect_personal_info(customer: Customer, booking_flow: BookingFlow):
+    if customer.name and customer.name_verified_at > days_ago(90):
+        # Recent verified name - just confirm
+        return f"Confirming your booking as {customer.name}. Is that correct?"
+    elif customer.name:
+        # Have name but not recent - offer to change
+        return f"I have you as {customer.name}. Is that still correct, or would you like to update it?"
+    else:
+        # No name - ask for it
+        return "What name should I put for the booking?"
+```
+
+---
+
+### Future Routing Features
+
+The following features are noted for future implementation but **not included in MVP**:
+
+| Feature | Description |
+|---------|-------------|
+| **Automated Reminders** | System-initiated reminder messages (24h before, etc.) |
+| **Waitlist Management** | When slots are full, offer to join waitlist |
+| **Business-Initiated Reschedule** | Business requests to move appointment |
+| **Escalation to Human** | Transfer conversation to human staff |
+| **Multi-Location Management** | Manage multiple locations from one account |
+| **Advanced Analytics** | Detailed business insights and reporting |
+| **Payment Integration** | Deposits, prepayment, in-app payments |
+
+---
+
+### Implementation Checklist
+
+When implementing message routing:
+
+- [ ] Central webhook receives all messages
+- [ ] Lookup recipient number to determine channel type
+- [ ] Lookup sender phone in staff registrations
+- [ ] Count business registrations for multi-business handling
+- [ ] Route to appropriate flow handler
+- [ ] Initialize or resume state machine
+- [ ] Track state transitions in database
+- [ ] Handle abandoned state detection
+- [ ] Send appropriate responses based on state
 
 **Customer System Prompt:**
 

@@ -43,23 +43,34 @@ ngrok http 8000                   # For Twilio webhooks
 ## Architecture
 
 ```
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│   WhatsApp      │────▶│   FastAPI       │────▶│   PostgreSQL    │
-│   (Twilio)      │◀────│   Backend       │◀────│                 │
-└─────────────────┘     └────────┬────────┘     └─────────────────┘
+┌──────────────────────────────────────────────────────────────────────────┐
+│                         WHATSAPP CHANNELS (Twilio)                        │
+├────────────────────────────────┬─────────────────────────────────────────┤
+│   YUME CENTRAL NUMBER          │      BUSINESS NUMBERS (per business)    │
+│   - Business onboarding        │      - End customer bookings            │
+│   - Business management        │      - Staff management                 │
+└────────────────────────────────┴─────────────────────────────────────────┘
+                                    │
+                                    ▼
+              ┌─────────────────────────────────────────┐
+              │           FastAPI Backend               │
+              │   (Message Router → State Machines)     │
+              └──────────────────┬──────────────────────┘
                                  │
-                        ┌────────┼────────┐
-                        ▼        ▼        ▼
-               ┌─────────────┐ ┌───────┐ ┌─────────────┐
-               │   OpenAI    │ │ Redis │ │   Next.js   │
-               │   GPT-5.2   │ │       │ │   Frontend  │
-               └─────────────┘ └───────┘ └─────────────┘
+            ┌────────────────────┼────────────────────┐
+            ▼                    ▼                    ▼
+   ┌─────────────┐      ┌─────────────┐      ┌─────────────┐
+   │  PostgreSQL │      │   OpenAI    │      │   Next.js   │
+   │             │      │   GPT-5.2   │      │   Frontend  │
+   └─────────────┘      └─────────────┘      └─────────────┘
 ```
 
 **Three interfaces:**
-1. **WhatsApp** - Customers book, staff manage schedules (via Twilio)
+1. **WhatsApp** - Two channels: Yume Central (B2B) + Business Numbers (B2C/Staff)
 2. **Web Dashboard** - Business owners manage everything (magic link auth)
 3. **Admin Dashboard** - Platform management (password auth)
+
+**See `docs/PROJECT_SPEC.md` for complete routing logic, state machines, and permissions.**
 
 ## Tech Stack
 
@@ -120,15 +131,42 @@ yume/
 ## Critical Patterns
 
 ### 1. Message Routing (THE CORE)
+
+**⚠️ IMPORTANT: See `docs/PROJECT_SPEC.md` for the complete routing specification (including state machines and permissions).**
+
+Yume operates two WhatsApp channels:
+- **Yume Central Number** - B2B: business onboarding + management
+- **Business Numbers** - B2C: end customers + staff of that specific business
+
 ```python
-# Incoming WhatsApp → identify sender → route to correct handler
-staff = await get_staff_by_phone(org.id, sender_phone)
-if staff:
-    return handle_staff_message(org, staff, message)
+# Simplified routing logic (see full spec for all cases)
+if recipient_number == YUME_CENTRAL_NUMBER:
+    registrations = await get_staff_registrations(sender_phone)
+    if len(registrations) == 0:
+        return handle_business_onboarding(sender_phone, message)
+    elif len(registrations) == 1:
+        return handle_business_management(registrations[0].business, message)
+    else:
+        return send_redirect_message("Text your business directly")
 else:
-    customer = await get_or_create_customer(org.id, sender_phone)
-    return handle_customer_message(org, customer, message)
+    business = await get_business_by_whatsapp_number(recipient_number)
+    staff = await get_staff_by_phone(business.id, sender_phone)
+    if staff:
+        return handle_staff_flow(business, staff, message)
+    else:
+        customer = await get_or_create_customer(business.id, sender_phone)
+        return handle_customer_flow(business, customer, message)
 ```
+
+**Key routing cases:**
+| Case | Recipient | Sender | Route |
+|------|-----------|--------|-------|
+| 1 | Yume Central | Unknown | Business Onboarding |
+| 2a | Yume Central | Staff of 1 business | Business Management |
+| 2b | Yume Central | Staff of 2+ businesses | Redirect |
+| 3 | Business Number | New staff | Staff Onboarding |
+| 4 | Business Number | Known staff | Business Management |
+| 5 | Business Number | Anyone else | End Customer |
 
 ### 2. Dual Authentication
 - **Business owners:** Magic link via WhatsApp → JWT (7 days)
@@ -319,7 +357,7 @@ NEXT_PUBLIC_API_URL=https://yume-backend.onrender.com/api/v1
 
 ## References
 
-- **Requirements:** `docs/PROJECT_SPEC.md` (source of truth)
+- **Full Specification:** `docs/PROJECT_SPEC.md` (business requirements, user journeys, message routing, state machines, permissions)
 - **Progress:** `workplan.md`
 - [Twilio WhatsApp](https://www.twilio.com/docs/whatsapp)
 - [OpenAI API](https://platform.openai.com/docs/api-reference)
