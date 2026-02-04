@@ -6,7 +6,7 @@ All prompts are in Mexican Spanish, using natural "tú" form.
 from datetime import datetime, timedelta
 from typing import Any
 
-from app.models import Customer, Organization, ServiceType, Staff
+from app.models import EndCustomer, Organization, ServiceType, YumeUser
 
 
 def format_services(services: list[ServiceType]) -> str:
@@ -62,33 +62,47 @@ def format_previous_appointments(appointments: list[Any]) -> str:
     return f"{count} citas anteriores"
 
 
-def format_staff_permissions(staff: Staff) -> str:
-    """Format staff permissions for prompt.
+def format_staff_permissions(staff: YumeUser) -> str:
+    """Format staff permissions for prompt based on permission level.
 
     Args:
         staff: Staff member
 
     Returns:
-        Formatted permissions string
+        Formatted permissions string describing what the staff can do
     """
-    perms = staff.permissions or {}
-    lines = []
+    level = getattr(staff, 'permission_level', 'staff')
 
-    if perms.get("can_view_schedule", True):
-        lines.append("✓ Ver agenda")
-    if perms.get("can_book", True):
-        lines.append("✓ Agendar citas")
-    if perms.get("can_cancel", True):
-        lines.append("✓ Cancelar citas")
-    if perms.get("can_view_reports", False):
-        lines.append("✓ Ver reportes")
-
-    return ", ".join(lines) if lines else "Permisos básicos"
+    if level == 'owner':
+        return """Dueño - Acceso completo:
+    ✓ Ver agenda propia y del negocio
+    ✓ Agendar citas y walk-ins
+    ✓ Bloquear tiempo
+    ✓ Ver estadísticas del negocio
+    ✓ Agregar/remover empleados
+    ✓ Cambiar permisos de empleados"""
+    elif level == 'admin':
+        return """Administrador:
+    ✓ Ver agenda propia y del negocio
+    ✓ Agendar citas y walk-ins
+    ✓ Bloquear tiempo
+    ✓ Ver estadísticas del negocio
+    ✓ Agregar/remover empleados"""
+    elif level == 'viewer':
+        return """Visualizador (solo lectura):
+    ✓ Ver agenda propia
+    ✓ Ver agenda del negocio"""
+    else:  # staff
+        return """Empleado:
+    ✓ Ver agenda propia y del negocio
+    ✓ Agendar citas y walk-ins
+    ✓ Bloquear tiempo
+    ✓ Marcar citas como completadas/no-show"""
 
 
 def build_customer_system_prompt(
     org: Organization,
-    customer: Customer,
+    customer: EndCustomer,
     services: list[ServiceType],
     previous_appointments: list[Any] | None = None,
     current_time: datetime | None = None,
@@ -210,7 +224,7 @@ Agendar citas de forma rápida y eficiente. Los clientes quieren terminar en men
 
 def build_staff_system_prompt(
     org: Organization,
-    staff: Staff,
+    staff: YumeUser,
     services: list[ServiceType],
     current_time: datetime | None = None,
 ) -> str:
@@ -279,6 +293,15 @@ Ayudar a {staff.name} a gestionar su agenda de forma rápida y eficiente.
 ### 5. Consultar clientes
 - "¿Quién es el cliente de las 3?" → busca en la agenda
 - "¿Cuántas veces ha venido María?" → usa get_customer_history
+
+### 6. Gestión del negocio (solo dueños/admins)
+- "¿Cómo va el negocio?" → usa get_business_stats
+- "Estadísticas del mes" → usa get_business_stats
+- "Agrega a Juan como empleado" → usa add_staff_member
+- "Remueve a María del equipo" → usa remove_staff_member
+- "Dale permisos de admin a Pedro" → usa change_staff_permission (solo dueño)
+
+IMPORTANTE: Si el empleado no tiene permisos para una acción, explícale amablemente que no puede hacerlo y sugiere contactar al dueño.
 
 ## Instrucciones Clave
 1. Sé CONCISA. Respuestas cortas y directas.

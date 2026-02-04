@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db, get_organization_dependency
-from app.models import Availability, AvailabilityType, Organization
+from app.models import Availability, AvailabilityType, Location, Organization, YumeUser
 from app.schemas.availability import (
     AvailabilityResponse,
     AvailableSlot,
@@ -34,7 +34,13 @@ async def create_recurring_availability(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> Availability:
     """Create recurring availability for a staff member (e.g., Mon-Fri 9-5)."""
-    # TODO: Validate staff belongs to org
+    # Validate staff belongs to org
+    staff = await db.get(YumeUser, availability_data.staff_id)
+    if not staff or staff.organization_id != org.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Staff member {availability_data.staff_id} not found",
+        )
 
     availability = Availability(
         staff_id=availability_data.staff_id,
@@ -62,7 +68,13 @@ async def create_exception_availability(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> Availability:
     """Create exception availability (time off, special hours for specific date)."""
-    # TODO: Validate staff belongs to org
+    # Validate staff belongs to org
+    staff = await db.get(YumeUser, availability_data.staff_id)
+    if not staff or staff.organization_id != org.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Staff member {availability_data.staff_id} not found",
+        )
 
     availability = Availability(
         staff_id=availability_data.staff_id,
@@ -90,7 +102,13 @@ async def get_staff_availability(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> list[Availability]:
     """Get all availability records for a staff member."""
-    # TODO: Validate staff belongs to org
+    # Validate staff belongs to org
+    staff = await db.get(YumeUser, staff_id)
+    if not staff or staff.organization_id != org.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Staff member {staff_id} not found",
+        )
 
     result = await db.execute(
         select(Availability)
@@ -122,7 +140,13 @@ async def delete_availability(
             detail=f"Availability {availability_id} not found",
         )
 
-    # TODO: Validate staff belongs to org
+    # Validate staff belongs to org
+    staff = await db.get(YumeUser, availability.staff_id)
+    if not staff or staff.organization_id != org.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Availability {availability_id} not found",
+        )
 
     await db.delete(availability)
     await db.commit()
@@ -154,12 +178,7 @@ async def get_available_slots(
     - Dashboard to view availability
     - Customers to see what times are open
     """
-    # TODO: Get location_id from org (for now use first location)
-    # For MVP, we'll just use the first location or pass it as a parameter
-
-    # Get first location for this org
-    from app.models import Location
-
+    # Get first location for this org (MVP: use first location)
     location_result = await db.execute(
         select(Location).where(Location.organization_id == org.id).limit(1)
     )

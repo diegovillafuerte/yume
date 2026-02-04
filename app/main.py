@@ -80,36 +80,3 @@ async def root() -> dict[str, str]:
 async def health() -> dict[str, str]:
     """Global health check."""
     return {"status": "ok"}
-
-
-# Short webhook endpoint for Twilio (redirects to main handler)
-from fastapi import Request, Depends, Form
-from fastapi.responses import PlainTextResponse
-from typing import Annotated
-from sqlalchemy.ext.asyncio import AsyncSession
-from app.api.deps import get_db
-
-
-@app.post("/wa")
-async def twilio_webhook_short(
-    request: Request,
-    db: Annotated[AsyncSession, Depends(get_db)],
-    MessageSid: Annotated[str, Form()],
-    From: Annotated[str, Form()],
-    To: Annotated[str, Form()],
-    Body: Annotated[str, Form()],
-    ProfileName: Annotated[str | None, Form()] = None,
-    NumMedia: Annotated[str | None, Form()] = None,
-) -> PlainTextResponse:
-    """Short webhook endpoint for Twilio WhatsApp."""
-    from app.api.v1.webhooks import receive_twilio_webhook
-    return await receive_twilio_webhook(
-        request=request,
-        db=db,
-        MessageSid=MessageSid,
-        From=From,
-        To=To,
-        Body=Body,
-        ProfileName=ProfileName,
-        NumMedia=NumMedia,
-    )

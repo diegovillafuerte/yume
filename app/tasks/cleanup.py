@@ -54,3 +54,80 @@ def cleanup_old_execution_traces(days_to_keep: int = 30) -> dict:
         await engine.dispose()
 
     return asyncio.run(_cleanup())
+
+
+@celery_app.task(name="app.tasks.cleanup.check_abandoned_sessions")
+def check_abandoned_sessions(timeout_minutes: int = 30) -> dict:
+    """
+    Check for and mark abandoned conversation sessions.
+
+    This task runs periodically to detect sessions that have been inactive
+    for longer than the timeout period. It handles:
+    - Customer flow sessions (booking, modify, cancel, rating)
+    - Staff onboarding sessions
+    - Business onboarding sessions
+
+    Args:
+        timeout_minutes: Inactivity threshold in minutes (default 30)
+
+    Returns:
+        Dict with counts of abandoned sessions by type
+    """
+    import asyncio
+
+    async def _check_abandoned():
+        from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+        from app.config import get_settings
+        from app.models import CustomerFlowSession, OnboardingSession, StaffOnboardingSession
+        from app.services.abandoned_state import check_and_mark_abandoned_sessions
+
+        settings = get_settings()
+        engine = create_async_engine(settings.async_database_url)
+        session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+        results = {
+            "customer_flows": 0,
+            "staff_onboarding": 0,
+            "business_onboarding": 0,
+            "timeout_minutes": timeout_minutes,
+        }
+
+        async with session_factory() as db:
+            # Check customer flow sessions
+            results["customer_flows"] = await check_and_mark_abandoned_sessions(
+                db=db,
+                session_model=CustomerFlowSession,
+                timeout_minutes=timeout_minutes,
+            )
+
+            # Check staff onboarding sessions
+            results["staff_onboarding"] = await check_and_mark_abandoned_sessions(
+                db=db,
+                session_model=StaffOnboardingSession,
+                timeout_minutes=timeout_minutes,
+            )
+
+            # Check business onboarding sessions
+            results["business_onboarding"] = await check_and_mark_abandoned_sessions(
+                db=db,
+                session_model=OnboardingSession,
+                timeout_minutes=timeout_minutes,
+            )
+
+            await db.commit()
+
+            total = sum([
+                results["customer_flows"],
+                results["staff_onboarding"],
+                results["business_onboarding"],
+            ])
+
+            if total > 0:
+                logger.info(f"Marked {total} sessions as abandoned: {results}")
+
+            return results
+
+        await engine.dispose()
+
+    return asyncio.run(_check_abandoned())

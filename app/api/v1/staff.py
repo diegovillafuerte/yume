@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db, get_organization_dependency
-from app.models import Organization, Staff
+from app.models import Organization, YumeUser
 from app.schemas.staff import StaffCreate, StaffResponse, StaffServiceAssignment, StaffUpdate
 from app.services import staff as staff_service
 
@@ -25,7 +25,7 @@ async def list_staff(
     location_id: Annotated[
         UUID | None, Query(description="Filter by location ID")
     ] = None,
-) -> list[Staff]:
+) -> list[YumeUser]:
     """List all staff members for an organization."""
     staff_list = await staff_service.list_staff(db, org.id, location_id=location_id)
     return staff_list
@@ -41,7 +41,7 @@ async def create_staff(
     staff_data: StaffCreate,
     org: Annotated[Organization, Depends(get_organization_dependency)],
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> Staff:
+) -> YumeUser:
     """Create a new staff member.
 
     The phone number will be used to identify this person as staff
@@ -69,7 +69,7 @@ async def lookup_staff_by_phone(
     phone_number: Annotated[str, Query(description="Phone number to lookup")],
     org: Annotated[Organization, Depends(get_organization_dependency)],
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> Staff | None:
+) -> YumeUser | None:
     """Lookup staff member by phone number (for message routing).
 
     This endpoint is used to determine if an incoming WhatsApp message
@@ -88,7 +88,7 @@ async def get_staff(
     staff_id: UUID,
     org: Annotated[Organization, Depends(get_organization_dependency)],
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> Staff:
+) -> YumeUser:
     """Get staff member details."""
     staff = await staff_service.get_staff(db, staff_id)
     if not staff or staff.organization_id != org.id:
@@ -109,7 +109,7 @@ async def update_staff(
     staff_data: StaffUpdate,
     org: Annotated[Organization, Depends(get_organization_dependency)],
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> Staff:
+) -> YumeUser:
     """Update a staff member."""
     staff = await staff_service.get_staff(db, staff_id)
     if not staff or staff.organization_id != org.id:
@@ -166,7 +166,7 @@ async def assign_staff_services(
     assignment: StaffServiceAssignment,
     org: Annotated[Organization, Depends(get_organization_dependency)],
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> Staff:
+) -> YumeUser:
     """Update which services this staff member can perform."""
     staff = await staff_service.get_staff(db, staff_id)
     if not staff or staff.organization_id != org.id:

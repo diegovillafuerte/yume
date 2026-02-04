@@ -26,6 +26,11 @@ from app.models import (
     Staff,
 )
 from app.services import scheduling as scheduling_service
+from app.services.permissions import (
+    can_use_tool,
+    get_permission_denied_message,
+    TOOL_PERMISSION_MAP,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -304,6 +309,83 @@ STAFF_TOOLS = [
             "required": ["appointment_id"],
         },
     },
+    # Owner/Admin management tools
+    {
+        "name": "get_business_stats",
+        "description": "Obtiene estadísticas del negocio (solo para dueños y administradores). Incluye citas totales, ingresos estimados, y métricas de rendimiento.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "date_from": {
+                    "type": "string",
+                    "description": "Fecha inicial en formato YYYY-MM-DD (por defecto hace 30 días)",
+                },
+                "date_to": {
+                    "type": "string",
+                    "description": "Fecha final en formato YYYY-MM-DD (por defecto hoy)",
+                },
+            },
+        },
+    },
+    {
+        "name": "add_staff_member",
+        "description": "Agrega un nuevo empleado al negocio (solo para dueños y administradores). El empleado recibirá un mensaje de WhatsApp para completar su configuración.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Nombre del empleado",
+                },
+                "phone_number": {
+                    "type": "string",
+                    "description": "Número de WhatsApp del empleado (ej: +521234567890)",
+                },
+                "permission_level": {
+                    "type": "string",
+                    "enum": ["admin", "staff", "viewer"],
+                    "description": "Nivel de permisos (admin, staff, o viewer). Por defecto: staff",
+                },
+            },
+            "required": ["name", "phone_number"],
+        },
+    },
+    {
+        "name": "remove_staff_member",
+        "description": "Desactiva un empleado del negocio (solo para dueños y administradores). El empleado ya no podrá acceder al sistema.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "staff_name": {
+                    "type": "string",
+                    "description": "Nombre del empleado a remover",
+                },
+                "staff_phone": {
+                    "type": "string",
+                    "description": "O su número de teléfono",
+                },
+            },
+        },
+    },
+    {
+        "name": "change_staff_permission",
+        "description": "Cambia el nivel de permisos de un empleado (solo para dueños). Niveles: admin (puede gestionar empleados), staff (puede ver agenda y crear citas), viewer (solo lectura).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "staff_name": {
+                    "type": "string",
+                    "description": "Nombre del empleado",
+                },
+                "new_permission_level": {
+                    "type": "string",
+                    "enum": ["admin", "staff", "viewer"],
+                    "description": "Nuevo nivel de permisos",
+                },
+            },
+            "required": ["staff_name", "new_permission_level"],
+        },
+    },
 ]
 
 
@@ -345,6 +427,21 @@ class ToolHandler:
         """
         logger.info(f"Executing tool: {tool_name} with input: {tool_input}")
 
+        # Check permissions for staff tools
+        if staff and tool_name in TOOL_PERMISSION_MAP:
+            if not can_use_tool(staff, tool_name):
+                action = TOOL_PERMISSION_MAP.get(tool_name, tool_name)
+                error_msg = get_permission_denied_message(action, staff)
+                logger.warning(
+                    f"Permission denied: {staff.name} ({staff.permission_level}) "
+                    f"tried to use {tool_name}"
+                )
+                return {
+                    "error": error_msg,
+                    "permission_denied": True,
+                    "required_action": action,
+                }
+
         # Route to appropriate handler
         handlers = {
             # Customer tools
@@ -363,6 +460,11 @@ class ToolHandler:
             "book_walk_in": lambda inp: self._book_walk_in(inp, staff),
             "get_customer_history": self._get_customer_history,
             "cancel_customer_appointment": self._cancel_customer_appointment,
+            # Management tools (owner/admin)
+            "get_business_stats": self._get_business_stats,
+            "add_staff_member": lambda inp: self._add_staff_member(inp, staff),
+            "remove_staff_member": self._remove_staff_member,
+            "change_staff_permission": self._change_staff_permission,
         }
 
         handler = handlers.get(tool_name)
@@ -1208,3 +1310,279 @@ class ToolHandler:
             result["notification"] = "Se notificará al cliente"
 
         return result
+
+    # -------------------------------------------------------------------------
+    # Management Tool Implementations (Owner/Admin)
+    # -------------------------------------------------------------------------
+
+    async def _get_business_stats(
+        self, tool_input: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Get business statistics."""
+        from sqlalchemy import func
+
+        date_from_str = tool_input.get("date_from")
+        date_to_str = tool_input.get("date_to")
+
+        # Default to last 30 days
+        if not date_to_str:
+            date_to = datetime.now(timezone.utc)
+        else:
+            try:
+                date_to = datetime.strptime(date_to_str, "%Y-%m-%d").replace(
+                    hour=23, minute=59, second=59, tzinfo=timezone.utc
+                )
+            except ValueError:
+                return {"error": "Formato de fecha inválido para date_to"}
+
+        if not date_from_str:
+            date_from = date_to - timedelta(days=30)
+        else:
+            try:
+                date_from = datetime.strptime(date_from_str, "%Y-%m-%d").replace(
+                    tzinfo=timezone.utc
+                )
+            except ValueError:
+                return {"error": "Formato de fecha inválido para date_from"}
+
+        # Get appointment counts by status
+        result = await self.db.execute(
+            select(
+                Appointment.status,
+                func.count(Appointment.id).label("count"),
+            )
+            .where(
+                Appointment.organization_id == self.org.id,
+                Appointment.scheduled_start >= date_from,
+                Appointment.scheduled_start <= date_to,
+            )
+            .group_by(Appointment.status)
+        )
+        status_counts = {row.status: row.count for row in result.all()}
+
+        total_appointments = sum(status_counts.values())
+        completed = status_counts.get(AppointmentStatus.COMPLETED.value, 0)
+        cancelled = status_counts.get(AppointmentStatus.CANCELLED.value, 0)
+        no_shows = status_counts.get(AppointmentStatus.NO_SHOW.value, 0)
+
+        # Calculate estimated revenue (from completed appointments)
+        revenue_result = await self.db.execute(
+            select(func.sum(ServiceType.price_cents))
+            .join(Appointment, Appointment.service_type_id == ServiceType.id)
+            .where(
+                Appointment.organization_id == self.org.id,
+                Appointment.status == AppointmentStatus.COMPLETED.value,
+                Appointment.scheduled_start >= date_from,
+                Appointment.scheduled_start <= date_to,
+            )
+        )
+        total_revenue_cents = revenue_result.scalar() or 0
+        total_revenue = total_revenue_cents / 100
+
+        # Get top services
+        services_result = await self.db.execute(
+            select(
+                ServiceType.name,
+                func.count(Appointment.id).label("count"),
+            )
+            .join(Appointment, Appointment.service_type_id == ServiceType.id)
+            .where(
+                Appointment.organization_id == self.org.id,
+                Appointment.scheduled_start >= date_from,
+                Appointment.scheduled_start <= date_to,
+            )
+            .group_by(ServiceType.name)
+            .order_by(func.count(Appointment.id).desc())
+            .limit(5)
+        )
+        top_services = [
+            {"service": row.name, "count": row.count}
+            for row in services_result.all()
+        ]
+
+        # Calculate completion rate
+        completion_rate = 0
+        if total_appointments > 0:
+            completion_rate = round((completed / total_appointments) * 100, 1)
+
+        return {
+            "period": f"{date_from.strftime('%Y-%m-%d')} a {date_to.strftime('%Y-%m-%d')}",
+            "total_appointments": total_appointments,
+            "completed": completed,
+            "cancelled": cancelled,
+            "no_shows": no_shows,
+            "completion_rate": f"{completion_rate}%",
+            "estimated_revenue": f"${total_revenue:,.0f} MXN",
+            "top_services": top_services,
+        }
+
+    async def _add_staff_member(
+        self, tool_input: dict[str, Any], current_staff: Staff | None
+    ) -> dict[str, Any]:
+        """Add a new staff member to the organization."""
+        from app.models import YumeUserPermissionLevel
+
+        name = tool_input.get("name", "").strip()
+        phone_number = tool_input.get("phone_number", "").strip()
+        permission_level = tool_input.get("permission_level", "staff")
+
+        if not name:
+            return {"error": "El nombre es requerido"}
+        if not phone_number:
+            return {"error": "El número de teléfono es requerido"}
+
+        # Normalize phone number
+        phone_number = phone_number.replace(" ", "").replace("-", "")
+        if not phone_number.startswith("+"):
+            if phone_number.startswith("52"):
+                phone_number = "+" + phone_number
+            else:
+                phone_number = "+52" + phone_number
+
+        # Validate permission level
+        valid_levels = ["admin", "staff", "viewer"]
+        if permission_level not in valid_levels:
+            return {
+                "error": f"Nivel de permiso inválido. Usa: {', '.join(valid_levels)}"
+            }
+
+        # Check for existing staff with same phone
+        existing = await self.db.execute(
+            select(Staff).where(
+                Staff.organization_id == self.org.id,
+                Staff.phone_number == phone_number,
+            )
+        )
+        if existing.scalar_one_or_none():
+            return {
+                "error": f"Ya existe un empleado con el número {phone_number}"
+            }
+
+        # Get primary location
+        from app.models import Location
+        location_result = await self.db.execute(
+            select(Location).where(
+                Location.organization_id == self.org.id,
+                Location.is_primary == True,
+            )
+        )
+        location = location_result.scalar_one_or_none()
+
+        # Create new staff member
+        new_staff = Staff(
+            organization_id=self.org.id,
+            location_id=location.id if location else None,
+            name=name,
+            phone_number=phone_number,
+            role="employee",
+            permission_level=permission_level,
+            is_active=True,
+        )
+        self.db.add(new_staff)
+        await self.db.flush()
+
+        return {
+            "success": True,
+            "message": f"Empleado '{name}' agregado correctamente",
+            "staff_name": name,
+            "phone_number": phone_number,
+            "permission_level": permission_level,
+            "note": "El empleado recibirá un mensaje de bienvenida en WhatsApp cuando envíe su primer mensaje.",
+        }
+
+    async def _remove_staff_member(
+        self, tool_input: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Deactivate a staff member."""
+        staff_name = tool_input.get("staff_name", "").strip()
+        staff_phone = tool_input.get("staff_phone", "").strip()
+
+        if not staff_name and not staff_phone:
+            return {"error": "Proporciona el nombre o teléfono del empleado"}
+
+        # Find the staff member
+        query = select(Staff).where(
+            Staff.organization_id == self.org.id,
+            Staff.is_active == True,
+        )
+
+        if staff_name:
+            query = query.where(Staff.name.ilike(f"%{staff_name}%"))
+        elif staff_phone:
+            # Normalize phone
+            staff_phone = staff_phone.replace(" ", "").replace("-", "")
+            query = query.where(Staff.phone_number.contains(staff_phone))
+
+        result = await self.db.execute(query)
+        staff = result.scalar_one_or_none()
+
+        if not staff:
+            return {"error": "Empleado no encontrado"}
+
+        # Don't allow removing owners
+        if staff.permission_level == "owner":
+            return {"error": "No se puede remover al dueño del negocio"}
+
+        # Deactivate (soft delete)
+        staff.is_active = False
+        await self.db.flush()
+
+        return {
+            "success": True,
+            "message": f"Empleado '{staff.name}' desactivado",
+            "staff_name": staff.name,
+            "note": "El empleado ya no podrá acceder al sistema. Sus citas programadas no fueron afectadas.",
+        }
+
+    async def _change_staff_permission(
+        self, tool_input: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Change a staff member's permission level."""
+        staff_name = tool_input.get("staff_name", "").strip()
+        new_level = tool_input.get("new_permission_level", "").strip()
+
+        if not staff_name:
+            return {"error": "El nombre del empleado es requerido"}
+
+        # Validate new level
+        valid_levels = ["admin", "staff", "viewer"]
+        if new_level not in valid_levels:
+            return {
+                "error": f"Nivel inválido. Opciones: {', '.join(valid_levels)}"
+            }
+
+        # Find the staff member
+        result = await self.db.execute(
+            select(Staff).where(
+                Staff.organization_id == self.org.id,
+                Staff.name.ilike(f"%{staff_name}%"),
+                Staff.is_active == True,
+            )
+        )
+        staff = result.scalar_one_or_none()
+
+        if not staff:
+            return {"error": f"Empleado '{staff_name}' no encontrado"}
+
+        # Don't allow changing owner's permissions
+        if staff.permission_level == "owner":
+            return {"error": "No se pueden cambiar los permisos del dueño"}
+
+        old_level = staff.permission_level
+        staff.permission_level = new_level
+        await self.db.flush()
+
+        level_descriptions = {
+            "admin": "administrador (puede gestionar empleados)",
+            "staff": "empleado (puede ver agenda y crear citas)",
+            "viewer": "visualizador (solo lectura)",
+        }
+
+        return {
+            "success": True,
+            "message": f"Permisos de '{staff.name}' actualizados",
+            "staff_name": staff.name,
+            "old_level": old_level,
+            "new_level": new_level,
+            "description": level_descriptions.get(new_level, new_level),
+        }

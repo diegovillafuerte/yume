@@ -203,6 +203,7 @@ ADMIN_MASTER_PASSWORD=change-in-production
 Frontend `.env.local`:
 ```bash
 NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
+NEXT_PUBLIC_YUME_WHATSAPP_NUMBER=17759674528
 ```
 
 ## Current Implementation Status
@@ -221,7 +222,7 @@ NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
 - Celery background tasks with 24-hour appointment reminders + trace cleanup
 - WhatsApp onboarding flow (business setup via chat)
 - Twilio WhatsApp integration (send/receive messages)
-- Meta Embedded Signup (connect existing WhatsApp Business numbers)
+- Twilio number provisioning for businesses
 
 ### Partially Implemented
 - WhatsApp template messages (need Twilio Content setup)

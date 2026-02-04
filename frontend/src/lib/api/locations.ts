@@ -6,11 +6,6 @@ export async function getLocations(orgId: string): Promise<Location[]> {
   return response.data;
 }
 
-export async function getLocation(orgId: string, locationId: string): Promise<Location> {
-  const response = await api.get(`/organizations/${orgId}/locations/${locationId}`);
-  return response.data;
-}
-
 export async function createLocation(orgId: string, data: LocationCreate): Promise<Location> {
   const response = await api.post(`/organizations/${orgId}/locations`, data);
   return response.data;

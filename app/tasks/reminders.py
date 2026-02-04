@@ -81,7 +81,7 @@ def send_appointment_reminder(appointment_id: str) -> dict:
         from sqlalchemy.orm import joinedload
 
         from app.config import get_settings
-        from app.models import Appointment, Customer, Organization, ServiceType
+        from app.models import Appointment, EndCustomer, Organization, ServiceType
 
         settings = get_settings()
         engine = create_async_engine(settings.async_database_url)

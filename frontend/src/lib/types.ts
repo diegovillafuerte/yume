@@ -107,18 +107,6 @@ export interface Appointment {
 }
 
 // Form types for creating/updating
-export interface AppointmentCreate {
-  customer_id: string;
-  service_type_id: string;
-  staff_id?: string | null;
-  location_id: string;
-  spot_id?: string | null;
-  scheduled_start: string;
-  scheduled_end: string;
-  notes?: string | null;
-  source?: string;
-}
-
 export interface StaffCreate {
   name: string;
   phone_number: string;

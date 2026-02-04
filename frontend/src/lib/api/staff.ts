@@ -8,11 +8,6 @@ export async function getStaffList(orgId: string, locationId?: string): Promise<
   return response.data;
 }
 
-export async function getStaff(orgId: string, staffId: string): Promise<Staff> {
-  const response = await api.get(`/organizations/${orgId}/staff/${staffId}`);
-  return response.data;
-}
-
 export async function createStaff(orgId: string, data: StaffCreate): Promise<Staff> {
   const response = await api.post(`/organizations/${orgId}/staff`, data);
   return response.data;

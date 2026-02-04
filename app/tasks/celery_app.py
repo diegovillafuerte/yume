@@ -51,5 +51,10 @@ celery_app.conf.update(
             "schedule": 86400.0,  # Every 24 hours (daily)
             "args": [30],  # Keep 30 days of traces
         },
+        "check-abandoned-sessions": {
+            "task": "app.tasks.cleanup.check_abandoned_sessions",
+            "schedule": 600.0,  # Every 10 minutes
+            "args": [30],  # 30 minute timeout
+        },
     },
 )

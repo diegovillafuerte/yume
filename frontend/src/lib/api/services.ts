@@ -6,11 +6,6 @@ export async function getServices(orgId: string): Promise<ServiceType[]> {
   return response.data;
 }
 
-export async function getService(orgId: string, serviceId: string): Promise<ServiceType> {
-  const response = await api.get(`/organizations/${orgId}/service-types/${serviceId}`);
-  return response.data;
-}
-
 export async function createService(orgId: string, data: ServiceTypeCreate): Promise<ServiceType> {
   const response = await api.post(`/organizations/${orgId}/service-types`, data);
   return response.data;

@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import PaginationParams, get_db, get_organization_dependency
-from app.models import Customer, Organization
+from app.models import EndCustomer, Organization
 from app.schemas.customer import CustomerCreate, CustomerResponse, CustomerUpdate
 from app.services import customer as customer_service
 
@@ -23,7 +23,7 @@ async def list_customers(
     org: Annotated[Organization, Depends(get_organization_dependency)],
     db: Annotated[AsyncSession, Depends(get_db)],
     pagination: Annotated[PaginationParams, Depends()],
-) -> list[Customer]:
+) -> list[EndCustomer]:
     """List customers for an organization with pagination."""
     customers = await customer_service.list_customers(
         db, org.id, skip=pagination.skip, limit=pagination.limit
@@ -41,7 +41,7 @@ async def create_customer(
     customer_data: CustomerCreate,
     org: Annotated[Organization, Depends(get_organization_dependency)],
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> Customer:
+) -> EndCustomer:
     """Create a new customer (incremental identity - only phone required)."""
     # Check if customer already exists with this phone
     existing = await customer_service.get_customer_by_phone(
@@ -67,7 +67,7 @@ async def get_customer(
     customer_id: UUID,
     org: Annotated[Organization, Depends(get_organization_dependency)],
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> Customer:
+) -> EndCustomer:
     """Get customer details."""
     customer = await customer_service.get_customer(db, customer_id)
     if not customer or customer.organization_id != org.id:
@@ -88,7 +88,7 @@ async def update_customer(
     customer_data: CustomerUpdate,
     org: Annotated[Organization, Depends(get_organization_dependency)],
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> Customer:
+) -> EndCustomer:
     """Update a customer (incremental identity - enrich data over time)."""
     customer = await customer_service.get_customer(db, customer_id)
     if not customer or customer.organization_id != org.id:

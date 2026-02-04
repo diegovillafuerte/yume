@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db, get_organization_dependency
-from app.models import Appointment, Organization
+from app.models import Appointment, EndCustomer, Organization, ServiceType, YumeUser
 from app.schemas.appointment import (
     AppointmentCancel,
     AppointmentComplete,
@@ -80,7 +80,31 @@ async def create_appointment(
             detail=f"Ya existe una cita en ese horario ({conflict_start} - {conflict_end}). Por favor selecciona otro horario.",
         )
 
-    # TODO: Validate customer, staff, service exist and belong to org
+    # Validate customer exists and belongs to org
+    if appointment_data.customer_id:
+        customer = await db.get(EndCustomer, appointment_data.customer_id)
+        if not customer or customer.organization_id != org.id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Customer {appointment_data.customer_id} not found",
+            )
+
+    # Validate staff exists and belongs to org
+    if appointment_data.staff_id:
+        staff = await db.get(YumeUser, appointment_data.staff_id)
+        if not staff or staff.organization_id != org.id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Staff member {appointment_data.staff_id} not found",
+            )
+
+    # Validate service type exists and belongs to org
+    service = await db.get(ServiceType, appointment_data.service_type_id)
+    if not service or service.organization_id != org.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Service type {appointment_data.service_type_id} not found",
+        )
 
     appointment = await scheduling_service.create_appointment(
         db, org.id, appointment_data

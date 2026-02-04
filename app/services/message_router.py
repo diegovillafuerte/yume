@@ -528,13 +528,12 @@ class MessageRouter:
 
             sender_type = MessageSenderType.CUSTOMER
 
-        # Send response using the business's own WhatsApp number
+        # Send response using Twilio
         if not skip_whatsapp_send:
             await self.whatsapp.send_text_message(
                 phone_number_id=phone_number_id,
                 to=sender_phone,
                 message=response_text,
-                org_access_token=self._get_org_access_token(org),
             )
 
         await self.db.commit()
@@ -828,19 +827,6 @@ class MessageRouter:
             )
         )
         return result.scalar_one_or_none()
-
-    def _get_org_access_token(self, org: Organization) -> str | None:
-        """Get the WhatsApp access token for an organization.
-
-        Args:
-            org: Organization
-
-        Returns:
-            Access token or None if using Yume's main number
-        """
-        if org.settings and isinstance(org.settings, dict):
-            return org.settings.get("whatsapp_access_token")
-        return None
 
     async def _message_already_processed(self, message_id: str) -> bool:
         """Check if message was already processed (deduplication).

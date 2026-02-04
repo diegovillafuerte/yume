@@ -26,9 +26,6 @@ dependencies = [
     # OpenAI API
     "openai>=1.50.0",
 
-    # Anthropic Claude API (legacy)
-    "anthropic>=0.39.0",
-
     # HTTP client
     "httpx>=0.27.0",
 

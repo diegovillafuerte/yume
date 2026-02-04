@@ -22,7 +22,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import async_session_maker
-from app.models import Location, Organization, OrganizationStatus, ServiceType, Staff
+from app.models import Location, Organization, OrganizationStatus, ServiceType, YumeUser
 from app.schemas.organization import OrganizationCreate
 from app.schemas.service_type import ServiceTypeCreate
 from app.schemas.staff import StaffCreate

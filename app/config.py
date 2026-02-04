@@ -44,21 +44,8 @@ class Settings(BaseSettings):
     twilio_auth_token: str = ""
     twilio_whatsapp_number: str = ""  # Format: whatsapp:+14155238886
 
-    # Meta WhatsApp (legacy - kept for reference)
-    meta_app_id: str = ""
-    meta_app_secret: str = ""
-    meta_webhook_verify_token: str = "yume-webhook-token"
-    meta_access_token: str = ""
-    meta_api_version: str = "v18.0"
-
     # OpenAI
     openai_api_key: str = ""
-
-    # Anthropic (legacy, kept for reference)
-    anthropic_api_key: str = ""
-
-    # Observability (optional)
-    sentry_dsn: str = ""
 
     # JWT Authentication
     jwt_secret_key: str = "change-me-jwt-secret-in-production"

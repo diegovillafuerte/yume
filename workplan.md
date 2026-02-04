@@ -2,7 +2,7 @@
 
 This document tracks progress toward production readiness. Requirements are from `docs/PROJECT_SPEC.md`.
 
-**Last Updated:** 2026-02-02 (Added Meta Cloud API webhook endpoints for WhatsApp connection flow)
+**Last Updated:** 2026-02-03 (Implemented Phases 1-6 of Message Routing Architecture refactor - COMPLETE)
 
 ---
 
@@ -386,6 +386,150 @@ Phase 1 established the core architecture. All items below are implemented.
 
 ---
 
+## Phase 5.4: Message Routing Architecture ✅ PHASE 1 COMPLETE
+
+**Goal:** Implement the two-channel message routing architecture from `docs/PROJECT_SPEC.md`.
+
+### Phase 1: Core Routing Logic ✅ COMPLETE
+
+- [x] Add `first_message_at` field to YumeUser model (tracks first WhatsApp message)
+- [x] Add `permission_level` field to YumeUser model (owner/admin/staff/viewer)
+- [x] Create migration for new fields
+- [x] Add `get_all_staff_registrations()` to find ALL staff records for a phone
+- [x] Implement 5-case routing decision tree:
+  - Case 1: Unknown sender to Yume Central → Business Onboarding
+  - Case 2a: Staff of 1 business to Yume Central → Business Management
+  - Case 2b: Staff of 2+ businesses to Yume Central → Redirect Message
+  - Case 3: Pre-registered staff (first msg) to Business Number → Staff Onboarding
+  - Case 4: Known staff to Business Number → Business Management
+  - Case 5: Anyone else to Business Number → End Customer
+- [x] Fix onboarding restart bug (completed sessions now redirect to staff flow)
+
+**Files Modified:**
+- `app/models/yume_user.py` - Added `first_message_at`, `permission_level`, `YumeUserPermissionLevel` enum
+- `app/models/__init__.py` - Export new enum
+- `app/services/staff.py` - Added `get_all_staff_registrations()`, `mark_first_message()`, `is_first_message()`
+- `app/services/message_router.py` - Full refactor with 5-case routing
+- `app/services/onboarding.py` - Fixed to detect completed sessions
+- `alembic/versions/20260203_*.py` - Migration for new fields
+
+### Phase 2: Business Onboarding Flow Alignment ✅ COMPLETE
+
+- [x] Update `OnboardingState` enum to match architecture states (STARTED → INITIATED)
+- [x] Strengthen AI prompt to ALWAYS call `complete_onboarding` tool
+- [x] Add detailed logging for tool execution
+- [x] Set `permission_level` to 'owner' for business owners during creation
+- [ ] Test end-to-end onboarding flow (requires live testing)
+
+**Files Modified:**
+- `app/models/onboarding_session.py` - Renamed STARTED → INITIATED, added docstrings
+- `app/services/onboarding.py` - Strengthened prompt, added detailed logging, set owner permission_level
+- `alembic/versions/20260203_0930_*.py` - Migration to update existing 'started' states
+
+### Phase 3: Staff Onboarding Flow ✅ COMPLETE
+
+- [x] Create `StaffOnboardingSession` model with state machine
+- [x] Create `StaffOnboardingHandler` service with AI tool calling
+- [x] Implement staff onboarding state machine (initiated → collecting_name → collecting_availability → showing_tutorial → completed)
+- [x] Update message_router.py to use StaffOnboardingHandler for Case 3
+- [x] Handle pending onboarding in Case 4 (check for incomplete sessions)
+- [x] Notify owner when staff completes onboarding
+
+**Files Created:**
+- `app/models/staff_onboarding_session.py` - Model with `StaffOnboardingState` enum
+- `app/services/staff_onboarding.py` - Handler with AI tools (confirm_name, save_availability, complete_tutorial)
+- `alembic/versions/20260203_1000-f6a7b8c9d0e1_add_staff_onboarding_sessions_table.py` - Migration
+
+### Phase 4: End Customer Flow State Machines ✅ COMPLETE
+
+- [x] Create `CustomerFlowSession` model with flow types (booking, modify, cancel, rating)
+- [x] Create `CustomerFlowState` enum covering all states across flows
+- [x] Create migration for `customer_flow_sessions` table
+- [x] Create `CustomerFlowHandler` service with:
+  - State-aware system prompts that guide AI based on current flow state
+  - Automatic flow detection from tool usage
+  - State transitions based on tool results
+  - Abandoned state handling (30 min timeout)
+  - Resume capability for interrupted flows
+- [x] Update message_router.py to use CustomerFlowHandler for Case 5
+- [x] Implement booking flow state machine: initiated → collecting_service → collecting_datetime → collecting_staff_preference → collecting_personal_info → confirming_summary → confirmed
+- [x] Implement modify flow state machine: initiated → identifying_booking → selecting_modification → collecting_new_* → confirming_summary → confirmed
+- [x] Implement cancel flow state machine: initiated → identifying_booking → confirming_cancellation → cancelled
+- [x] Rating flow states defined (triggered by Celery task after appointment)
+
+**Files Created:**
+- `app/models/customer_flow_session.py` - Model with `CustomerFlowType` and `CustomerFlowState` enums
+- `app/services/customer_flows.py` - Handler with flow-aware prompts and state tracking
+- `alembic/versions/20260203_1100-g7h8i9j0k1l2_add_customer_flow_sessions_table.py` - Migration
+
+**Note:** Rating flow prompting depends on Celery workers (deferred). The state machine is ready.
+
+### Phase 5: Business Management Flows + Permissions ✅ COMPLETE
+
+- [x] Create `app/services/permissions.py` with permission matrix
+- [x] Implement permission checking in tool handler (staff tools check permissions before execution)
+- [x] Add new management tools (owner/admin only):
+  - `get_business_stats` - View business statistics
+  - `add_staff_member` - Add new employees
+  - `remove_staff_member` - Deactivate employees
+  - `change_staff_permission` - Change permission levels (owner only)
+- [x] Update staff system prompt with permission-level information
+- [x] Add permission-denied error messages (Spanish)
+
+**Files Created:**
+- `app/services/permissions.py` - Permission matrix, checking functions, tool-permission mapping
+
+**Files Modified:**
+- `app/ai/tools.py` - Added permission checking in execute_tool(), added 4 new management tools
+- `app/ai/prompts.py` - Updated format_staff_permissions() to show level-based capabilities
+
+### Phase 6: Universal Patterns ✅ COMPLETE
+
+- [x] Create `app/services/abandoned_state.py` with centralized abandoned state logic
+- [x] Add Celery task `check_abandoned_sessions` for all session types
+- [x] Add Celery beat schedule (every 10 minutes)
+- [x] Create `app/services/customer_profile.py` for cross-business lookup
+- [x] Enhance EndCustomer model with profile fields:
+  - `name_verified_at` - When customer confirmed their name
+  - `profile_data` - JSONB for preferences and history
+- [x] Create migration for EndCustomer profile fields
+- [x] Update CustomerFlowHandler to use profile data in prompts
+- [x] Implement returning customer experience:
+  - Cross-business name lookup
+  - Preference detection (times, days, services)
+  - Name reconfirmation logic (30-day threshold)
+- [x] Update flow-aware prompts with customer context
+
+**Files Created:**
+- `app/services/abandoned_state.py` - Centralized abandoned state pattern
+- `app/services/customer_profile.py` - Cross-business lookup and profile management
+- `alembic/versions/20260203_1200-h8i9j0k1l2m3_add_end_customer_profile_fields.py` - Migration
+
+**Files Modified:**
+- `app/models/end_customer.py` - Added name_verified_at, profile_data fields
+- `app/services/customer_flows.py` - Integrated profile and abandoned state services
+- `app/tasks/cleanup.py` - Added check_abandoned_sessions task
+- `app/tasks/celery_app.py` - Added beat schedule for abandoned check
+
+---
+
+## Message Routing Architecture Implementation ✅ COMPLETE
+
+All 6 phases of the Message Routing Architecture refactor are now implemented:
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| 1 | Core Routing Logic (5-case decision tree) | ✅ |
+| 2 | Business Onboarding Flow Alignment | ✅ |
+| 3 | Staff Onboarding Flow | ✅ |
+| 4 | End Customer Flow State Machines | ✅ |
+| 5 | Business Management Flows + Permissions | ✅ |
+| 6 | Universal Patterns (Abandoned State, Profiles) | ✅ |
+
+See `docs/PROJECT_SPEC.md` for the full specification.
+
+---
+
 ## Phase 6: Testing & Quality
 
 **Goal:** Ensure reliability through comprehensive testing.
@@ -690,6 +834,36 @@ To enable all background workers on Render:
 
 | Date | Changes |
 |------|---------|
+| 2026-02-03 | **MESSAGE ROUTING ARCHITECTURE COMPLETE** - All 6 phases implemented |
+| 2026-02-03 | Implemented Phase 6: Universal Patterns (Abandoned State + Customer Profiles) |
+| 2026-02-03 | Created abandoned_state.py with centralized timeout/resume logic |
+| 2026-02-03 | Created customer_profile.py with cross-business lookup and preferences |
+| 2026-02-03 | Added EndCustomer profile fields (name_verified_at, profile_data) |
+| 2026-02-03 | Added Celery task check_abandoned_sessions with 10-minute schedule |
+| 2026-02-03 | Updated CustomerFlowHandler with profile-aware prompts |
+| 2026-02-03 | Implemented Phase 5: Business Management Flows + Permissions |
+| 2026-02-03 | Created permissions.py with PERMISSION_MATRIX and helper functions |
+| 2026-02-03 | Added permission checking to tool handler for staff tools |
+| 2026-02-03 | Added 4 new management tools: get_business_stats, add_staff_member, remove_staff_member, change_staff_permission |
+| 2026-02-03 | Updated staff prompts with permission-level information |
+| 2026-02-03 | Implemented Phase 4: End Customer Flow State Machines |
+| 2026-02-03 | Created CustomerFlowSession model with flow types and states |
+| 2026-02-03 | Created CustomerFlowHandler service with state-aware prompts |
+| 2026-02-03 | Updated message_router to use CustomerFlowHandler for customer messages |
+| 2026-02-03 | Implemented Phase 3: Staff Onboarding Flow (complete) |
+| 2026-02-03 | Created StaffOnboardingSession model with state machine |
+| 2026-02-03 | Created StaffOnboardingHandler service with AI tools |
+| 2026-02-03 | Added owner notification when staff completes onboarding |
+| 2026-02-03 | Implemented Phase 2: Business Onboarding Flow Alignment |
+| 2026-02-03 | Renamed OnboardingState.STARTED → INITIATED for architecture consistency |
+| 2026-02-03 | Strengthened AI prompt to ensure complete_onboarding is called |
+| 2026-02-03 | Added detailed logging for onboarding tool execution |
+| 2026-02-03 | Implemented Phase 1 of Message Routing Architecture (5-case routing decision tree) |
+| 2026-02-03 | Added `first_message_at` and `permission_level` fields to YumeUser model |
+| 2026-02-03 | Added `get_all_staff_registrations()` for multi-business staff detection |
+| 2026-02-03 | Added Case 2b: Multi-business staff redirect message |
+| 2026-02-03 | Added Case 3: Staff onboarding welcome message for first-time staff |
+| 2026-02-03 | Fixed onboarding restart bug (completed sessions now redirect to staff flow) |
 | 2026-02-02 | Added Meta Cloud API webhook endpoints (GET verify + POST receive messages) |
 | 2026-02-02 | Added webhook registration with Meta after business connects via Embedded Signup |
 | 2026-02-02 | Added signature verification for Meta webhooks (HMAC-SHA256) |

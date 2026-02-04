@@ -1,5 +1,5 @@
 import api from './client';
-import { Appointment, AppointmentCreate } from '@/lib/types';
+import { Appointment } from '@/lib/types';
 
 export interface AppointmentFilters {
   start_date?: string;
@@ -23,26 +23,6 @@ export async function getAppointment(
   appointmentId: string
 ): Promise<Appointment> {
   const response = await api.get(`/organizations/${orgId}/appointments/${appointmentId}`);
-  return response.data;
-}
-
-export async function createAppointment(
-  orgId: string,
-  data: AppointmentCreate
-): Promise<Appointment> {
-  const response = await api.post(`/organizations/${orgId}/appointments`, data);
-  return response.data;
-}
-
-export async function updateAppointment(
-  orgId: string,
-  appointmentId: string,
-  data: Partial<AppointmentCreate>
-): Promise<Appointment> {
-  const response = await api.patch(
-    `/organizations/${orgId}/appointments/${appointmentId}`,
-    data
-  );
   return response.data;
 }
 

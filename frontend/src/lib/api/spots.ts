@@ -8,11 +8,6 @@ export async function getSpots(orgId: string, locationId: string, activeOnly = t
   return response.data;
 }
 
-export async function getSpot(orgId: string, spotId: string): Promise<Spot> {
-  const response = await api.get(`/organizations/${orgId}/spots/${spotId}`);
-  return response.data;
-}
-
 export async function createSpot(
   orgId: string,
   locationId: string,
