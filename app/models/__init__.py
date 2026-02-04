@@ -18,14 +18,15 @@ from app.models.message import (
 from app.models.organization import Organization, OrganizationStatus
 from app.models.service_type import ServiceType
 from app.models.spot import Spot
-from app.models.yume_user import YumeUser, YumeUserRole
+from app.models.yume_user import YumeUser, YumeUserPermissionLevel, YumeUserRole
 from app.models.onboarding_session import OnboardingSession, OnboardingState
+from app.models.staff_onboarding_session import StaffOnboardingSession, StaffOnboardingState
+from app.models.customer_flow_session import CustomerFlowSession, CustomerFlowState, CustomerFlowType
 
-# Backwards compatibility aliases (deprecated, use new names)
-Customer = EndCustomer
+# Aliases for backward compatibility
 Staff = YumeUser
 StaffRole = YumeUserRole
-staff_service_types = yume_user_service_types
+Customer = EndCustomer
 
 __all__ = [
     # Base
@@ -37,8 +38,10 @@ __all__ = [
     "Location",
     "Spot",
     "YumeUser",
+    "Staff",  # Alias for YumeUser
     "ServiceType",
     "EndCustomer",
+    "Customer",  # Alias for EndCustomer
     "Appointment",
     "Conversation",
     "Message",
@@ -51,6 +54,8 @@ __all__ = [
     # Enums
     "OrganizationStatus",
     "YumeUserRole",
+    "StaffRole",  # Alias for YumeUserRole
+    "YumeUserPermissionLevel",
     "AppointmentStatus",
     "AppointmentSource",
     "ConversationStatus",
@@ -62,9 +67,9 @@ __all__ = [
     "ExecutionTraceType",
     "OnboardingSession",
     "OnboardingState",
-    # Backwards compatibility aliases (deprecated)
-    "Customer",  # Use EndCustomer
-    "Staff",  # Use YumeUser
-    "StaffRole",  # Use YumeUserRole
-    "staff_service_types",  # Use yume_user_service_types
+    "StaffOnboardingSession",
+    "StaffOnboardingState",
+    "CustomerFlowSession",
+    "CustomerFlowState",
+    "CustomerFlowType",
 ]

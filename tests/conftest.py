@@ -9,19 +9,25 @@ import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from app.config import settings
+from app.config import get_settings
+
+settings = get_settings()
 from app.models import (
     Appointment,
     AppointmentSource,
     AppointmentStatus,
     Base,
-    Customer,
+    EndCustomer,
     Location,
     Organization,
     ServiceType,
     Spot,
-    Staff,
+    YumeUser,
 )
+
+# Aliases for compatibility
+Customer = EndCustomer
+Staff = YumeUser
 
 
 # Use a test database

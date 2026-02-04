@@ -35,6 +35,7 @@ from app.models import (
     Spot,
     Staff,
     StaffRole,
+    YumeUserPermissionLevel,
 )
 
 logger = logging.getLogger(__name__)
@@ -175,14 +176,6 @@ ONBOARDING_TOOLS = [
         },
     },
     {
-        "name": "send_whatsapp_connect_link",
-        "description": "Envía el link para conectar WhatsApp Business. Úsalo cuando el usuario haya terminado de agregar servicios y esté listo para conectar su número de WhatsApp Business.",
-        "input_schema": {
-            "type": "object",
-            "properties": {},
-        },
-    },
-    {
         "name": "send_dashboard_link",
         "description": "Envía el link al dashboard y explica cómo iniciar sesión. Úsalo después de completar el registro.",
         "input_schema": {
@@ -264,13 +257,10 @@ def build_onboarding_system_prompt(session: OnboardingSession) -> str:
     menu_display = _format_service_menu(services)
 
     # Determine current step
-    is_awaiting_connection = session.state == OnboardingState.AWAITING_WHATSAPP_CONNECT.value
     if not collected.get("business_name"):
         current_step = "Paso 1: Obtener nombre del negocio y del dueño"
     elif not services:
         current_step = "Paso 2: Obtener servicios (nombre, precio, duración)"
-    elif is_awaiting_connection:
-        current_step = "Esperando conexión de WhatsApp Business"
     else:
         current_step = "Paso 3: Confirmar datos y activar cuenta"
 
@@ -332,20 +322,10 @@ En 2-3 minutos configuramos tu cuenta:
 - Pregunta si todos hacen todos los servicios o hay especialidades
 - El dueño ya se registra automáticamente con su número actual
 
-### Paso 5: Conexión de WhatsApp (DOS OPCIONES)
-Cuando el usuario termine de agregar servicios, ofrece DOS opciones para conectar su número:
-
-**Opción A: Conectar WhatsApp Business existente (Recomendado)**
-- Si el usuario YA tiene una cuenta de WhatsApp Business
-- Usa `send_whatsapp_connect_link` para enviar el link de conexión
-- El usuario conectará su número existente desde el navegador
-
-**Opción B: Obtener un número dedicado de Yume**
-- Si el usuario NO tiene WhatsApp Business
-- Usa `provision_twilio_number` para obtener un número nuevo
-- Yume le asignará un número de México para su negocio
-
-Pregunta: "¿Ya tienes una cuenta de WhatsApp Business, o prefieres que te asignemos un número dedicado para tu negocio?"
+### Paso 5: Número de WhatsApp
+Cuando el usuario termine de agregar servicios:
+- Usa `provision_twilio_number` para obtener un número de WhatsApp dedicado para el negocio
+- Yume le asignará un número de México para que sus clientes puedan agendar citas
 
 ### Paso 6: Confirmación y Activación
 - Muestra un resumen de todo lo configurado
@@ -353,6 +333,22 @@ Pregunta: "¿Ya tienes una cuenta de WhatsApp Business, o prefieres que te asign
 - Si confirman, usa `complete_onboarding` para crear la cuenta
 - Después usa `send_dashboard_link` para enviar el link al dashboard
 - Explica que sus clientes podrán escribir al número configurado para agendar
+
+## ⚠️ CRÍTICO: Completar el Registro
+**DEBES llamar la herramienta `complete_onboarding` cuando:**
+1. Tienes el nombre del negocio guardado (save_business_info ya fue llamada)
+2. Tienes al menos un servicio (add_service ya fue llamada al menos una vez)
+3. El usuario confirma que está listo ("sí", "listo", "activa", "ok", "perfecto", "correcto", etc.)
+
+**NO esperes a que el usuario diga palabras exactas.** Si ya tienes la información mínima y el usuario da cualquier señal de confirmación, LLAMA `complete_onboarding` con confirmed=true.
+
+**Ejemplos de confirmación del usuario:**
+- "Sí, activa" → LLAMA complete_onboarding
+- "Ok, listo" → LLAMA complete_onboarding
+- "Perfecto" → LLAMA complete_onboarding
+- "Está bien" → LLAMA complete_onboarding
+- "Dale" → LLAMA complete_onboarding
+- "Va" → LLAMA complete_onboarding
 
 ## Instrucciones Importantes
 - Habla en español mexicano natural, usa "tú" no "usted"
@@ -404,13 +400,32 @@ class OnboardingHandler:
     ) -> OnboardingSession:
         """Get existing or create new onboarding session.
 
+        This returns:
+        - An active (in-progress) session if one exists
+        - A COMPLETED session if one exists (caller should redirect to staff flow)
+        - A new session if neither exists
+
         Args:
             phone_number: User's phone number
             sender_name: Name from WhatsApp profile
 
         Returns:
-            Onboarding session
+            Onboarding session (may be completed - caller should check state)
         """
+        # First, check for a COMPLETED session - if exists, return it so caller
+        # can redirect to the staff flow (this fixes the "restart onboarding" bug)
+        result = await self.db.execute(
+            select(OnboardingSession).where(
+                OnboardingSession.phone_number == phone_number,
+                OnboardingSession.state == OnboardingState.COMPLETED.value,
+            )
+        )
+        completed_session = result.scalar_one_or_none()
+        if completed_session:
+            logger.info(f"Found completed onboarding session for {phone_number}")
+            return completed_session
+
+        # Then check for an active (in-progress) session
         result = await self.db.execute(
             select(OnboardingSession).where(
                 OnboardingSession.phone_number == phone_number,
@@ -434,7 +449,7 @@ class OnboardingHandler:
         session = OnboardingSession(
             phone_number=phone_number,
             owner_name=sender_name,
-            state=OnboardingState.STARTED.value,
+            state=OnboardingState.INITIATED.value,
             collected_data={"owner_name": sender_name} if sender_name else {},
             conversation_context={},
         )
@@ -552,7 +567,19 @@ class OnboardingHandler:
         Returns:
             Tool result
         """
-        logger.info(f"Executing onboarding tool: {tool_name} with {tool_input}")
+        import time
+        start_time = time.time()
+
+        logger.info(
+            f"\n{'='*60}\n"
+            f"🔧 ONBOARDING TOOL EXECUTION\n"
+            f"{'='*60}\n"
+            f"   Phone: {session.phone_number}\n"
+            f"   State: {session.state}\n"
+            f"   Tool: {tool_name}\n"
+            f"   Input: {tool_input}\n"
+            f"{'='*60}"
+        )
 
         collected = dict(session.collected_data or {})
 
@@ -565,8 +592,14 @@ class OnboardingHandler:
             if tool_input.get("city"):
                 collected["city"] = tool_input.get("city")
             session.collected_data = collected
+            old_state = session.state
             session.state = OnboardingState.COLLECTING_SERVICES.value
             await self.db.flush()
+            elapsed_ms = (time.time() - start_time) * 1000
+            logger.info(
+                f"   ✅ save_business_info: {collected['business_name']} "
+                f"(state: {old_state} → {session.state}) ({elapsed_ms:.0f}ms)"
+            )
             return {
                 "success": True,
                 "message": "Información del negocio guardada",
@@ -595,6 +628,12 @@ class OnboardingHandler:
                     "duration": f"{svc['duration_minutes']} min"
                 })
 
+            elapsed_ms = (time.time() - start_time) * 1000
+            logger.info(
+                f"   ✅ add_service: {new_service['name']} "
+                f"(${new_service['price']}, {new_service['duration_minutes']}min) "
+                f"Total: {len(services)} services ({elapsed_ms:.0f}ms)"
+            )
             return {
                 "success": True,
                 "message": f"Servicio '{new_service['name']}' agregado",
@@ -667,21 +706,40 @@ class OnboardingHandler:
             return {"success": True, "message": "Horario guardado"}
 
         elif tool_name == "complete_onboarding":
+            logger.info(f"   🎯 complete_onboarding called with confirmed={tool_input.get('confirmed')}")
+
             if not tool_input.get("confirmed"):
+                elapsed_ms = (time.time() - start_time) * 1000
+                logger.warning(f"   ⚠️ complete_onboarding: User not confirmed ({elapsed_ms:.0f}ms)")
                 return {"success": False, "message": "El usuario no confirmó"}
 
             # Verify we have minimum required data
             if not collected.get("business_name"):
+                elapsed_ms = (time.time() - start_time) * 1000
+                logger.warning(f"   ⚠️ complete_onboarding: Missing business_name ({elapsed_ms:.0f}ms)")
                 return {"success": False, "error": "Falta el nombre del negocio"}
             if not collected.get("services"):
+                elapsed_ms = (time.time() - start_time) * 1000
+                logger.warning(f"   ⚠️ complete_onboarding: Missing services ({elapsed_ms:.0f}ms)")
                 return {"success": False, "error": "Falta al menos un servicio"}
 
             # Create the organization and all related entities
             try:
+                logger.info(f"   📦 Creating organization: {collected.get('business_name')}")
                 org = await self._create_organization(session)
                 session.state = OnboardingState.COMPLETED.value
                 session.organization_id = str(org.id)
                 await self.db.flush()
+                elapsed_ms = (time.time() - start_time) * 1000
+                logger.info(
+                    f"\n{'🎉'*20}\n"
+                    f"   ONBOARDING COMPLETED!\n"
+                    f"   Business: {org.name}\n"
+                    f"   Org ID: {org.id}\n"
+                    f"   Phone: {session.phone_number}\n"
+                    f"   Duration: {elapsed_ms:.0f}ms\n"
+                    f"{'🎉'*20}"
+                )
                 return {
                     "success": True,
                     "message": "Registro completado",
@@ -689,37 +747,9 @@ class OnboardingHandler:
                     "business_name": org.name,
                 }
             except Exception as e:
-                logger.error(f"Error creating organization: {e}", exc_info=True)
+                elapsed_ms = (time.time() - start_time) * 1000
+                logger.error(f"   ❌ Error creating organization: {e} ({elapsed_ms:.0f}ms)", exc_info=True)
                 return {"success": False, "error": str(e)}
-
-        elif tool_name == "send_whatsapp_connect_link":
-            # Verify we have minimum required data before sending connect link
-            if not collected.get("business_name"):
-                return {"success": False, "error": "Primero necesito el nombre del negocio"}
-            if not collected.get("services"):
-                return {"success": False, "error": "Primero necesito al menos un servicio"}
-
-            # Generate unique connection token
-            connection_token = secrets.token_urlsafe(32)
-            session.connection_token = connection_token
-            session.state = OnboardingState.AWAITING_WHATSAPP_CONNECT.value
-            await self.db.flush()
-
-            connect_url = f"{_settings.frontend_url}/connect?token={connection_token}"
-            business_name = collected.get("business_name", "tu negocio")
-
-            return {
-                "success": True,
-                "message": "Link de conexión generado",
-                "connect_url": connect_url,
-                "business_name": business_name,
-                "formatted_message": (
-                    f"Perfecto, ya tenemos la información de {business_name}.\n\n"
-                    f"Ahora necesito que conectes tu número de WhatsApp Business.\n\n"
-                    f"👉 Abre este link en tu celular:\n{connect_url}\n\n"
-                    f"Es un proceso de 1 minuto. Cuando termines, regresa aquí y escríbeme."
-                )
-            }
 
         elif tool_name == "send_dashboard_link":
             business_name = collected.get("business_name", "tu negocio")
@@ -760,11 +790,10 @@ class OnboardingHandler:
                 if not result:
                     return {
                         "success": False,
-                        "error": "No se pudo provisionar un número. Por favor intenta conectar tu número de WhatsApp Business existente.",
+                        "error": "No se pudo provisionar un número en este momento.",
                         "fallback_message": (
                             "No pudimos obtener un número nuevo en este momento. "
-                            "¿Tienes una cuenta de WhatsApp Business? "
-                            "Si es así, puedo enviarte el link para conectarla."
+                            "Por favor intenta de nuevo más tarde o contacta soporte."
                         )
                     }
 
@@ -795,12 +824,14 @@ class OnboardingHandler:
                     "error": str(e),
                     "fallback_message": (
                         "Hubo un problema al obtener tu número. "
-                        "¿Tienes una cuenta de WhatsApp Business? "
-                        "Puedo enviarte el link para conectarla en su lugar."
+                        "Por favor intenta de nuevo más tarde o contacta soporte."
                     )
                 }
 
-        return {"error": f"Unknown tool: {tool_name}"}
+        result = {"error": f"Unknown tool: {tool_name}"}
+        elapsed_ms = (time.time() - start_time) * 1000
+        logger.warning(f"   ⚠️ Unknown tool: {tool_name} ({elapsed_ms:.0f}ms)")
+        return result
 
     async def _create_organization(self, session: OnboardingSession) -> Organization:
         """Create organization and all related entities from session data.
@@ -824,8 +855,7 @@ class OnboardingHandler:
 
         # Determine WhatsApp configuration:
         # Option 1: Twilio provisioned number (stored in collected_data)
-        # Option 2: Meta Embedded Signup (stored in session fields)
-        # Option 3: No WhatsApp setup yet (use owner's phone as placeholder)
+        # Option 2: No WhatsApp setup yet (use owner's phone as placeholder)
         org_settings = {
             "language": "es",
             "currency": "MXN",
@@ -834,15 +864,16 @@ class OnboardingHandler:
 
         if collected.get("twilio_provisioned_number"):
             # Twilio provisioned number path
-            whatsapp_phone_number_id = collected["twilio_phone_number_sid"]
+            # Use the actual phone number for routing (NOT the SID)
+            whatsapp_phone_number_id = collected["twilio_provisioned_number"]
             org_settings["whatsapp_provider"] = "twilio"
             org_settings["twilio_phone_number"] = collected["twilio_provisioned_number"]
             org_settings["twilio_phone_number_sid"] = collected["twilio_phone_number_sid"]
             logger.info(f"Using Twilio provisioned number: {collected['twilio_provisioned_number']}")
         else:
-            # Meta Embedded Signup or no setup yet - use owner phone as placeholder
+            # No WhatsApp setup yet - use owner phone as placeholder
             whatsapp_phone_number_id = session.phone_number
-            org_settings["whatsapp_provider"] = "pending"  # Will be set when they connect
+            org_settings["whatsapp_provider"] = "pending"  # Will be set when they provision a number
             logger.info(f"No WhatsApp number provisioned, using owner phone as placeholder")
 
         # 1. Create Organization
@@ -910,7 +941,7 @@ class OnboardingHandler:
         spot.service_types.extend(services)
         logger.info(f"Created spot: {spot.id}")
 
-        # 5. Create Staff (owner)
+        # 5. Create Staff (owner) with owner permission level
         owner_name = collected.get("owner_name") or session.owner_name or "Dueño"
         owner_staff = Staff(
             organization_id=org.id,
@@ -919,6 +950,7 @@ class OnboardingHandler:
             name=owner_name,
             phone_number=session.phone_number,
             role=StaffRole.OWNER.value,
+            permission_level=YumeUserPermissionLevel.OWNER.value,
             is_active=True,
             permissions={"can_manage_all": True},
         )
