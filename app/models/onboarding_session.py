@@ -1,4 +1,11 @@
-"""Onboarding session model - tracks business onboarding via WhatsApp."""
+"""Onboarding session model - tracks business onboarding via WhatsApp.
+
+See docs/PROJECT_SPEC.md for the complete onboarding state machine:
+
+    initiated → collecting_business_info → collecting_services → collecting_hours
+                                                                       ↓
+    abandoned ←─────────────────────────────────────── confirming → completed
+"""
 
 from enum import Enum
 
@@ -10,13 +17,22 @@ from app.models.base import Base, TimestampMixin, UUIDMixin
 
 
 class OnboardingState(str, Enum):
-    """Onboarding progress states."""
+    """Onboarding progress states.
 
-    STARTED = "started"  # Just initiated
+    State machine flow:
+    1. INITIATED - Just started, no data collected yet
+    2. COLLECTING_BUSINESS_INFO - Getting name, type, owner info
+    3. COLLECTING_SERVICES - Getting services offered
+    4. COLLECTING_HOURS - Getting business hours (optional)
+    5. CONFIRMING - Showing summary, waiting for confirmation
+    6. COMPLETED - Organization created, done
+    7. ABANDONED - User stopped responding (stores last_active_state in metadata)
+    """
+
+    INITIATED = "initiated"  # Just started (renamed from STARTED for architecture consistency)
     COLLECTING_BUSINESS_INFO = "collecting_business_info"  # Getting name, type
     COLLECTING_SERVICES = "collecting_services"  # Getting services offered
     COLLECTING_HOURS = "collecting_hours"  # Getting business hours
-    AWAITING_WHATSAPP_CONNECT = "awaiting_whatsapp_connect"  # Waiting for WhatsApp Business connection
     CONFIRMING = "confirming"  # Confirming all details
     COMPLETED = "completed"  # Done, org created
     ABANDONED = "abandoned"  # User stopped responding
@@ -41,7 +57,7 @@ class OnboardingSession(Base, UUIDMixin, TimestampMixin):
     state: Mapped[str] = mapped_column(
         String(50),
         nullable=False,
-        default=OnboardingState.STARTED.value,
+        default=OnboardingState.INITIATED.value,
     )
 
     # Collected data (progressive, AI fills this in)
@@ -69,14 +85,12 @@ class OnboardingSession(Base, UUIDMixin, TimestampMixin):
     # The organization created after completion (null until complete)
     organization_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
 
-    # WhatsApp Business connection fields
-    # Unique token for the connection URL (used in /connect?token=xxx)
+    # DEPRECATED: These fields were used for Meta Embedded Signup flow (removed in Feb 2026)
+    # Kept in DB schema for backwards compatibility with existing records
     connection_token: Mapped[str | None] = mapped_column(String(100), nullable=True, unique=True, index=True)
-
-    # WhatsApp Business credentials (set after Meta Embedded Signup)
     whatsapp_phone_number_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     whatsapp_waba_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    whatsapp_access_token: Mapped[str | None] = mapped_column(Text, nullable=True)  # Long-lived token
+    whatsapp_access_token: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     def __repr__(self) -> str:
         """String representation."""

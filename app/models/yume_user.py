@@ -1,10 +1,11 @@
 """YumeUser model - represents employees and owners who use Yume."""
 
 import uuid
+from datetime import datetime
 from enum import Enum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, ForeignKey, Index, String, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -24,6 +25,19 @@ class YumeUserRole(str, Enum):
 
     OWNER = "owner"
     EMPLOYEE = "employee"
+
+
+class YumeUserPermissionLevel(str, Enum):
+    """Permission levels for staff members.
+
+    Determines what actions a staff member can perform.
+    See docs/PROJECT_SPEC.md for full permission matrix.
+    """
+
+    OWNER = "owner"  # Full access to everything
+    ADMIN = "admin"  # Can manage staff, see all data
+    STAFF = "staff"  # Can view schedule, create bookings
+    VIEWER = "viewer"  # Read-only access
 
 
 class YumeUser(Base, UUIDMixin, TimestampMixin):
@@ -54,8 +68,15 @@ class YumeUser(Base, UUIDMixin, TimestampMixin):
     permissions: Mapped[dict] = mapped_column(
         JSONB, nullable=False, default=dict
     )  # {can_view_schedule: true, can_book: true, can_cancel: true, ...}
+    permission_level: Mapped[str] = mapped_column(
+        String(20), nullable=False, default=YumeUserPermissionLevel.STAFF.value
+    )  # owner, admin, staff, viewer - see docs/PROJECT_SPEC.md
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     settings: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    # First message timestamp - NULL means never messaged via WhatsApp yet
+    # Set on the first WhatsApp message from this staff member
+    # Used to detect staff who need onboarding vs already-onboarded staff
+    first_message_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Relationships
     organization: Mapped["Organization"] = relationship("Organization", back_populates="yume_users")
