@@ -15,6 +15,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.services.tracing import traced
 from app.ai.client import OpenAIClient, get_openai_client
 from app.ai.prompts import build_customer_system_prompt, build_staff_system_prompt
 from app.ai.tools import CUSTOMER_TOOLS, STAFF_TOOLS, ToolHandler
@@ -65,6 +66,7 @@ class ConversationHandler:
         self.tool_handler = ToolHandler(db, organization)
         self.tracer = tracer
 
+    @traced
     async def handle_customer_message(
         self,
         customer: Customer,
@@ -121,6 +123,7 @@ class ConversationHandler:
 
         return response_text
 
+    @traced
     async def handle_staff_message(
         self,
         staff: Staff,
@@ -173,6 +176,7 @@ class ConversationHandler:
 
         return response_text
 
+    @traced
     async def _process_with_tools(
         self,
         system_prompt: str,

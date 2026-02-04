@@ -14,6 +14,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.services.tracing import traced
 from app.models import (
     Appointment,
     AppointmentSource,
@@ -407,6 +408,7 @@ class ToolHandler:
         self.db = db
         self.org = organization
 
+    @traced(trace_type="ai_tool", capture_args=["tool_name", "tool_input"])
     async def execute_tool(
         self,
         tool_name: str,

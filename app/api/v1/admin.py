@@ -1,5 +1,6 @@
 """Admin API endpoints."""
 
+import logging
 from typing import Annotated
 from uuid import UUID
 
@@ -22,6 +23,12 @@ from app.schemas.admin import (
     AdminOrgStatusUpdate,
     AdminStats,
 )
+from app.schemas.logs import (
+    CorrelationDetail,
+    CorrelationListResponse,
+    CorrelationSummary,
+    TraceItem,
+)
 from app.schemas.playground import (
     PlaygroundExchangeListResponse,
     PlaygroundSendRequest,
@@ -36,6 +43,8 @@ from app.schemas.playground import (
 from app.services import admin as admin_service
 from app.services import playground as playground_service
 from app.utils.jwt import create_admin_access_token
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -242,21 +251,36 @@ async def list_conversations(
     limit: int = 50,
 ) -> list[AdminConversationSummary]:
     """List conversations across all organizations."""
-    data = await admin_service.list_conversations(db, org_id, skip, limit)
-    return [
-        AdminConversationSummary(
-            id=item["conversation"].id,
-            organization_id=item["conversation"].organization_id,
-            organization_name=item["conversation"].organization.name,
-            customer_phone=item["conversation"].end_customer.phone_number,
-            customer_name=item["conversation"].end_customer.name,
-            status=str(item["conversation"].status),
-            message_count=item["message_count"],
-            last_message_at=item["conversation"].last_message_at,
-            created_at=item["conversation"].created_at,
+    try:
+        data = await admin_service.list_conversations(db, org_id, skip, limit)
+    except Exception as e:
+        logger.exception("Failed to list conversations")
+        raise HTTPException(status_code=500, detail=str(e))
+
+    results = []
+    for item in data:
+        conv = item["conversation"]
+        # Skip conversations with missing relationships (orphaned data)
+        if not conv.organization or not conv.end_customer:
+            logger.warning(
+                f"Skipping conversation {conv.id} with missing relationship: "
+                f"organization={conv.organization_id}, end_customer={conv.end_customer_id}"
+            )
+            continue
+        results.append(
+            AdminConversationSummary(
+                id=conv.id,
+                organization_id=conv.organization_id,
+                organization_name=conv.organization.name,
+                customer_phone=conv.end_customer.phone_number,
+                customer_name=conv.end_customer.name,
+                status=str(conv.status),
+                message_count=item["message_count"],
+                last_message_at=conv.last_message_at,
+                created_at=conv.created_at,
+            )
         )
-        for item in data
-    ]
+    return results
 
 
 @router.get(
@@ -275,6 +299,17 @@ async def get_conversation(
 
     conv = data["conversation"]
     messages = data["messages"]
+
+    # Handle missing relationships (orphaned data)
+    if not conv.organization or not conv.end_customer:
+        logger.warning(
+            f"Conversation {conv.id} has missing relationship: "
+            f"organization={conv.organization_id}, end_customer={conv.end_customer_id}"
+        )
+        raise HTTPException(
+            status_code=404,
+            detail="Conversation has missing organization or customer data",
+        )
 
     return AdminConversationDetail(
         id=conv.id,
@@ -440,3 +475,92 @@ async def get_trace_detail(
     if not trace:
         raise HTTPException(status_code=404, detail="Trace not found")
     return TraceStepDetail(**trace)
+
+
+# =============================================================================
+# Logs Endpoints - Function trace viewer
+# =============================================================================
+
+
+@router.get(
+    "/logs",
+    response_model=CorrelationListResponse,
+    dependencies=[Depends(require_admin)],
+)
+async def list_logs(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    phone_number: Annotated[str | None, Query()] = None,
+    organization_id: Annotated[UUID | None, Query()] = None,
+    errors_only: Annotated[bool, Query()] = False,
+    skip: int = 0,
+    limit: int = 50,
+) -> CorrelationListResponse:
+    """List correlation summaries (grouped function traces).
+
+    Each correlation represents a single request (e.g., a webhook handler invocation).
+    All traced functions within that request are grouped under the same correlation_id.
+    """
+    summaries, total_count = await admin_service.list_correlation_summaries(
+        db,
+        phone_number=phone_number,
+        organization_id=organization_id,
+        errors_only=errors_only,
+        skip=skip,
+        limit=limit,
+    )
+
+    return CorrelationListResponse(
+        correlations=[CorrelationSummary(**s) for s in summaries],
+        total_count=total_count,
+        has_more=skip + limit < total_count,
+    )
+
+
+@router.get(
+    "/logs/{correlation_id}",
+    response_model=CorrelationDetail,
+    dependencies=[Depends(require_admin)],
+)
+async def get_correlation(
+    correlation_id: UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> CorrelationDetail:
+    """Get all traces for a specific correlation (request)."""
+    data = await admin_service.get_correlation_detail(db, correlation_id)
+    if not data:
+        raise HTTPException(status_code=404, detail="Correlation not found")
+
+    return CorrelationDetail(
+        correlation_id=data["correlation_id"],
+        phone_number=data["phone_number"],
+        organization_id=data["organization_id"],
+        organization_name=data["organization_name"],
+        started_at=data["started_at"],
+        total_duration_ms=data["total_duration_ms"],
+        trace_count=data["trace_count"],
+        has_errors=data["has_errors"],
+        entry_function=data["entry_function"],
+        traces=[TraceItem(**t) for t in data["traces"]],
+    )
+
+
+@router.get(
+    "/logs/{correlation_id}/traces/{trace_id}",
+    response_model=TraceItem,
+    dependencies=[Depends(require_admin)],
+)
+async def get_log_trace_detail(
+    correlation_id: UUID,
+    trace_id: UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> TraceItem:
+    """Get a single trace by ID."""
+    trace_data = await admin_service.get_trace_detail(db, trace_id)
+    if not trace_data:
+        raise HTTPException(status_code=404, detail="Trace not found")
+
+    # Verify the trace belongs to the specified correlation
+    if trace_data["correlation_id"] != correlation_id:
+        raise HTTPException(status_code=404, detail="Trace not found in this correlation")
+
+    return TraceItem(**trace_data)

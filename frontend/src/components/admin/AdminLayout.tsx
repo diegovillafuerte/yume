@@ -9,7 +9,7 @@ const tabs = [
   { name: 'Organizations', href: '/admin/organizations' },
   { name: 'Conversations', href: '/admin/conversations' },
   { name: 'Playground', href: '/admin/playground' },
-  { name: 'Activity', href: '/admin/activity' },
+  { name: 'Logs', href: '/admin/logs' },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {

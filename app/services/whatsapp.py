@@ -5,6 +5,7 @@ from typing import Any
 
 import httpx
 
+from app.services.tracing import traced
 from app.config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -43,6 +44,7 @@ class WhatsAppClient:
             phone = f"+{phone}"
         return f"whatsapp:{phone}"
 
+    @traced(trace_type="external_api", capture_args=["to"])
     async def send_text_message(
         self,
         phone_number_id: str,

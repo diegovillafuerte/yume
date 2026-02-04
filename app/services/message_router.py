@@ -27,6 +27,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.services.tracing import traced, set_organization_id
 from app.models import (
     Conversation,
     ConversationStatus,
@@ -90,6 +91,7 @@ class MessageRouter:
         self.db = db
         self.whatsapp = whatsapp_client
 
+    @traced(capture_args=["phone_number_id", "sender_phone", "message_id"])
     async def route_message(
         self,
         phone_number_id: str,
@@ -171,6 +173,7 @@ class MessageRouter:
                 skip_whatsapp_send=skip_whatsapp_send,
             )
 
+    @traced(capture_args=["sender_phone"])
     async def _route_central_number_message(
         self,
         phone_number_id: str,
@@ -336,6 +339,7 @@ class MessageRouter:
                 "response_text": response_text,
             }
 
+    @traced(capture_args=["sender_phone"])
     async def _route_business_number_message(
         self,
         org: Organization,
@@ -560,6 +564,7 @@ class MessageRouter:
     # Handler methods for each flow
     # ==========================================================================
 
+    @traced(capture_args=["sender_phone"])
     async def _handle_business_onboarding(
         self,
         sender_phone: str,
@@ -620,6 +625,7 @@ class MessageRouter:
 
         return response
 
+    @traced(capture_args=["sender_phone"])
     async def _handle_staff_onboarding(
         self,
         org: Organization,
@@ -699,6 +705,7 @@ class MessageRouter:
 
         return response
 
+    @traced(capture_args=["sender_phone"])
     async def _handle_business_management(
         self,
         org: Organization,
@@ -748,6 +755,7 @@ class MessageRouter:
 
         return response
 
+    @traced(capture_args=["sender_phone"])
     async def _handle_end_customer(
         self,
         org: Organization,

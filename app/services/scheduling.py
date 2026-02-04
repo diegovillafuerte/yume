@@ -6,6 +6,7 @@ from uuid import UUID
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.services.tracing import traced
 from app.models import (
     Appointment,
     AppointmentSource,
@@ -54,6 +55,7 @@ async def list_appointments(
     return list(result.scalars().all())
 
 
+@traced
 async def create_appointment(
     db: AsyncSession, organization_id: UUID, appointment_data: AppointmentCreate
 ) -> Appointment:
@@ -192,6 +194,7 @@ async def check_appointment_conflicts(
     return list(result.scalars().all())
 
 
+@traced
 async def get_available_slots(
     db: AsyncSession,
     organization_id: UUID,

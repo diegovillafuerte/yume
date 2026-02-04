@@ -10,6 +10,7 @@ from app.models import (
     Appointment,
     Conversation,
     Customer,
+    FunctionTrace,
     Location,
     Message,
     OnboardingSession,
@@ -210,14 +211,29 @@ async def delete_organization(db: AsyncSession, org_id: UUID) -> bool:
 
     Note: OnboardingSession.organization_id is a STRING field, not a FK,
     so it doesn't cascade automatically. We delete it manually first.
+    We also delete by phone number to catch incomplete sessions (where org_id is NULL).
     All other entities have proper FK cascades and will be deleted automatically.
     """
-    # 1. Delete OnboardingSession records (STRING field, no FK cascade)
+    # 1. Get staff phone numbers before deletion (for cleaning up incomplete sessions)
+    staff_result = await db.execute(
+        select(Staff.phone_number).where(Staff.organization_id == org_id)
+    )
+    staff_phones = [row[0] for row in staff_result.fetchall()]
+
+    # 2. Delete OnboardingSession records by organization_id (completed sessions)
     await db.execute(
         delete(OnboardingSession).where(OnboardingSession.organization_id == str(org_id))
     )
 
-    # 2. Delete Organization (cascades to all other entities via FK ondelete="CASCADE")
+    # 3. Delete OnboardingSession records by phone number (catches incomplete sessions)
+    if staff_phones:
+        await db.execute(
+            delete(OnboardingSession).where(
+                OnboardingSession.phone_number.in_(staff_phones)
+            )
+        )
+
+    # 4. Delete Organization (cascades to all other entities via FK ondelete="CASCADE")
     result = await db.execute(delete(Organization).where(Organization.id == org_id))
 
     await db.commit()
@@ -272,3 +288,197 @@ async def get_activity_feed(db: AsyncSession, limit: int = 50) -> list[dict]:
     all_activities.sort(key=lambda x: x["timestamp"], reverse=True)
 
     return all_activities[:limit]
+
+
+# =============================================================================
+# Logs / Function Traces
+# =============================================================================
+
+
+async def list_correlation_summaries(
+    db: AsyncSession,
+    phone_number: str | None = None,
+    organization_id: UUID | None = None,
+    errors_only: bool = False,
+    skip: int = 0,
+    limit: int = 50,
+) -> tuple[list[dict], int]:
+    """List correlation summaries (grouped traces).
+
+    Returns a list of correlation summaries with metadata and total count.
+    """
+    from sqlalchemy import distinct
+
+    # Build base query for distinct correlation IDs
+    base_query = select(FunctionTrace.correlation_id).distinct()
+
+    if phone_number:
+        base_query = base_query.where(FunctionTrace.phone_number == phone_number)
+
+    if organization_id:
+        base_query = base_query.where(FunctionTrace.organization_id == organization_id)
+
+    if errors_only:
+        # Get correlations that have at least one error
+        error_corrs = select(FunctionTrace.correlation_id).where(
+            FunctionTrace.is_error == True
+        ).distinct()
+        base_query = base_query.where(FunctionTrace.correlation_id.in_(error_corrs))
+
+    # Get total count
+    count_query = select(func.count()).select_from(base_query.subquery())
+    total_count = (await db.execute(count_query)).scalar_one()
+
+    # Get paginated correlation IDs (ordered by most recent first)
+    # We need to get the min created_at for each correlation to order properly
+    corr_query = (
+        select(
+            FunctionTrace.correlation_id,
+            func.min(FunctionTrace.created_at).label("started_at"),
+        )
+        .group_by(FunctionTrace.correlation_id)
+    )
+
+    if phone_number:
+        corr_query = corr_query.where(FunctionTrace.phone_number == phone_number)
+    if organization_id:
+        corr_query = corr_query.where(FunctionTrace.organization_id == organization_id)
+    if errors_only:
+        corr_query = corr_query.having(func.max(FunctionTrace.is_error.cast(Integer)) == 1)
+
+    corr_query = corr_query.order_by(func.min(FunctionTrace.created_at).desc())
+    corr_query = corr_query.offset(skip).limit(limit)
+
+    from sqlalchemy import Integer
+
+    result = await db.execute(corr_query)
+    correlation_rows = result.all()
+
+    # Build summaries for each correlation
+    summaries = []
+    for corr_id, started_at in correlation_rows:
+        # Get all traces for this correlation
+        traces_result = await db.execute(
+            select(FunctionTrace)
+            .where(FunctionTrace.correlation_id == corr_id)
+            .order_by(FunctionTrace.sequence_number)
+        )
+        traces = list(traces_result.scalars().all())
+
+        if not traces:
+            continue
+
+        first_trace = traces[0]
+        total_duration = sum(t.duration_ms for t in traces)
+        has_errors = any(t.is_error for t in traces)
+
+        # Get organization name if we have an org ID
+        org_name = None
+        if first_trace.organization_id:
+            org_result = await db.execute(
+                select(Organization.name).where(
+                    Organization.id == first_trace.organization_id
+                )
+            )
+            org_name = org_result.scalar_one_or_none()
+
+        summaries.append({
+            "correlation_id": corr_id,
+            "phone_number": first_trace.phone_number,
+            "organization_id": first_trace.organization_id,
+            "organization_name": org_name,
+            "started_at": started_at,
+            "total_duration_ms": total_duration,
+            "trace_count": len(traces),
+            "has_errors": has_errors,
+            "entry_function": first_trace.function_name,
+        })
+
+    return summaries, total_count
+
+
+async def get_correlation_detail(
+    db: AsyncSession, correlation_id: UUID
+) -> dict | None:
+    """Get all traces for a correlation."""
+    traces_result = await db.execute(
+        select(FunctionTrace)
+        .where(FunctionTrace.correlation_id == correlation_id)
+        .order_by(FunctionTrace.sequence_number)
+    )
+    traces = list(traces_result.scalars().all())
+
+    if not traces:
+        return None
+
+    first_trace = traces[0]
+    total_duration = sum(t.duration_ms for t in traces)
+    has_errors = any(t.is_error for t in traces)
+
+    # Get organization name
+    org_name = None
+    if first_trace.organization_id:
+        org_result = await db.execute(
+            select(Organization.name).where(
+                Organization.id == first_trace.organization_id
+            )
+        )
+        org_name = org_result.scalar_one_or_none()
+
+    return {
+        "correlation_id": correlation_id,
+        "phone_number": first_trace.phone_number,
+        "organization_id": first_trace.organization_id,
+        "organization_name": org_name,
+        "started_at": first_trace.created_at,
+        "total_duration_ms": total_duration,
+        "trace_count": len(traces),
+        "has_errors": has_errors,
+        "entry_function": first_trace.function_name,
+        "traces": [
+            {
+                "id": t.id,
+                "sequence_number": t.sequence_number,
+                "function_name": t.function_name,
+                "module_path": t.module_path,
+                "trace_type": t.trace_type,
+                "duration_ms": t.duration_ms,
+                "is_error": t.is_error,
+                "input_summary": t.input_summary,
+                "output_summary": t.output_summary,
+                "error_type": t.error_type,
+                "error_message": t.error_message,
+                "created_at": t.created_at,
+            }
+            for t in traces
+        ],
+    }
+
+
+async def get_trace_detail(db: AsyncSession, trace_id: UUID) -> dict | None:
+    """Get a single trace by ID."""
+    result = await db.execute(
+        select(FunctionTrace).where(FunctionTrace.id == trace_id)
+    )
+    trace = result.scalar_one_or_none()
+
+    if not trace:
+        return None
+
+    return {
+        "id": trace.id,
+        "correlation_id": trace.correlation_id,
+        "sequence_number": trace.sequence_number,
+        "function_name": trace.function_name,
+        "module_path": trace.module_path,
+        "trace_type": trace.trace_type,
+        "duration_ms": trace.duration_ms,
+        "is_error": trace.is_error,
+        "input_summary": trace.input_summary,
+        "output_summary": trace.output_summary,
+        "error_type": trace.error_type,
+        "error_message": trace.error_message,
+        "phone_number": trace.phone_number,
+        "organization_id": trace.organization_id,
+        "created_at": trace.created_at,
+    }

@@ -21,6 +21,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.services.tracing import traced
 from app.ai.client import OpenAIClient, get_openai_client
 from app.models import (
     Location,
@@ -455,6 +456,7 @@ class OnboardingHandler:
         await self.db.refresh(session)
         return session
 
+    @traced
     async def handle_message(
         self,
         session: OnboardingSession,
@@ -497,6 +499,7 @@ class OnboardingHandler:
 
         return response_text
 
+    @traced
     async def _process_with_tools(
         self,
         session: OnboardingSession,
@@ -548,6 +551,7 @@ class OnboardingHandler:
         logger.warning("Hit max iterations in onboarding")
         return self.client.extract_text_response(response) if response else "Lo siento, hubo un error."
 
+    @traced(trace_type="ai_tool")
     async def _execute_tool(
         self,
         session: OnboardingSession,
@@ -830,6 +834,7 @@ class OnboardingHandler:
         logger.warning(f"   ⚠️ Unknown tool: {tool_name} ({elapsed_ms:.0f}ms)")
         return result
 
+    @traced
     async def _create_organization(self, session: OnboardingSession) -> Organization:
         """Create organization and all related entities from session data.
 
@@ -925,7 +930,6 @@ class OnboardingHandler:
 
         # 4. Create default Spot
         spot = Spot(
-            organization_id=org.id,
             location_id=location.id,
             name="Estación 1",
             is_active=True,

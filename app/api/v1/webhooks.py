@@ -11,6 +11,7 @@ from app.api.deps import get_db
 from app.config import get_settings
 from app.services.message_router import MessageRouter
 from app.services.whatsapp import WhatsAppClient
+from app.services.tracing import start_trace_context, save_pending_traces, clear_trace_context
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 logger = logging.getLogger(__name__)
@@ -79,11 +80,15 @@ async def receive_twilio_webhook(
         f"{'='*80}"
     )
 
-    try:
-        # Extract phone numbers
-        sender_phone = _extract_phone_number(From)
-        our_number = _extract_phone_number(To)
+    # Extract phone numbers early for trace context
+    sender_phone = _extract_phone_number(From)
+    our_number = _extract_phone_number(To)
 
+    # Start trace context for this request
+    correlation_id = start_trace_context(phone_number=sender_phone)
+    logger.info(f"  TraceCorrelationId: {correlation_id}")
+
+    try:
         # Skip media-only messages for now
         if NumMedia and int(NumMedia) > 0 and not Body:
             logger.info(f"Skipping media-only message (no text)")
@@ -111,13 +116,30 @@ async def receive_twilio_webhook(
             sender_name=ProfileName,
         )
 
+        # Save all pending traces before commit
+        trace_count = await save_pending_traces(db)
+        if trace_count > 0:
+            logger.info(f"  Saved {trace_count} function traces")
+
+        await db.commit()
+
         # Return empty TwiML (we send responses via the API, not TwiML)
         return PlainTextResponse(content="", media_type="text/xml")
 
     except Exception as e:
         logger.error(f"❌ Error processing Twilio webhook: {e}", exc_info=True)
+        # Try to save traces even on error (for debugging)
+        try:
+            await save_pending_traces(db)
+            await db.commit()
+        except Exception:
+            pass
         # Return empty response to avoid Twilio retries
         return PlainTextResponse(content="", media_type="text/xml")
+
+    finally:
+        # Clean up trace context
+        clear_trace_context()
 
 
 @router.get("/whatsapp/status", status_code=status.HTTP_200_OK)

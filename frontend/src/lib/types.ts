@@ -362,3 +362,41 @@ export interface PlaygroundTraceListResponse {
   total_latency_ms: number;
   traces: TraceStepSummary[];
 }
+
+// Logs types - for function trace viewer
+export interface LogTraceItem {
+  id: string;
+  sequence_number: number;
+  function_name: string;
+  module_path: string;
+  trace_type: 'service' | 'ai_tool' | 'external_api';
+  duration_ms: number;
+  is_error: boolean;
+  input_summary: Record<string, unknown>;
+  output_summary: Record<string, unknown>;
+  error_type: string | null;
+  error_message: string | null;
+  created_at: string;
+}
+
+export interface LogCorrelationSummary {
+  correlation_id: string;
+  phone_number: string | null;
+  organization_id: string | null;
+  organization_name: string | null;
+  started_at: string;
+  total_duration_ms: number;
+  trace_count: number;
+  has_errors: boolean;
+  entry_function: string;
+}
+
+export interface LogCorrelationDetail extends LogCorrelationSummary {
+  traces: LogTraceItem[];
+}
+
+export interface LogCorrelationListResponse {
+  correlations: LogCorrelationSummary[];
+  total_count: number;
+  has_more: boolean;
+}

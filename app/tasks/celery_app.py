@@ -51,6 +51,11 @@ celery_app.conf.update(
             "schedule": 86400.0,  # Every 24 hours (daily)
             "args": [30],  # Keep 30 days of traces
         },
+        "cleanup-old-function-traces": {
+            "task": "app.tasks.cleanup.cleanup_old_function_traces",
+            "schedule": 86400.0,  # Every 24 hours (daily)
+            "args": [7],  # Keep 7 days of function traces
+        },
         "check-abandoned-sessions": {
             "task": "app.tasks.cleanup.check_abandoned_sessions",
             "schedule": 600.0,  # Every 10 minutes

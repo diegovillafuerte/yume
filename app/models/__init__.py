@@ -8,6 +8,7 @@ from app.models.base import Base, TimestampMixin, UUIDMixin
 from app.models.conversation import Conversation, ConversationStatus
 from app.models.end_customer import EndCustomer
 from app.models.execution_trace import ExecutionTrace, ExecutionTraceType
+from app.models.function_trace import FunctionTrace, FunctionTraceType
 from app.models.location import Location
 from app.models.message import (
     Message,
@@ -48,6 +49,7 @@ __all__ = [
     "Availability",
     "AuthToken",
     "ExecutionTrace",
+    "FunctionTrace",
     # Association Tables
     "spot_service_types",
     "yume_user_service_types",
@@ -65,6 +67,7 @@ __all__ = [
     "AvailabilityType",
     "TokenType",
     "ExecutionTraceType",
+    "FunctionTraceType",
     "OnboardingSession",
     "OnboardingState",
     "StaffOnboardingSession",
