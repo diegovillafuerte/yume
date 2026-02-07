@@ -61,7 +61,7 @@ ngrok http 8000                   # For Twilio webhooks
             ▼                    ▼                    ▼
    ┌─────────────┐      ┌─────────────┐      ┌─────────────┐
    │  PostgreSQL │      │   OpenAI    │      │   Next.js   │
-   │             │      │   GPT-5.2   │      │   Frontend  │
+   │             │      │   gpt-4.1   │      │   Frontend  │
    └─────────────┘      └─────────────┘      └─────────────┘
 ```
 
@@ -80,7 +80,7 @@ ngrok http 8000                   # For Twilio webhooks
 |-------|------------|
 | Backend | Python 3.11+, FastAPI, Pydantic v2 |
 | Database | PostgreSQL 15+, SQLAlchemy 2.0 (async), Alembic |
-| AI | OpenAI GPT-5.2 with function calling |
+| AI | OpenAI gpt-4.1 with function calling |
 | WhatsApp | Twilio WhatsApp API |
 | Frontend | Next.js 15, TypeScript, Tailwind CSS |
 | Background | Redis + Celery (appointment reminders) |
@@ -92,8 +92,8 @@ yume/
 ├── app/                         # Backend
 │   ├── main.py                  # FastAPI entry
 │   ├── config.py                # Settings
-│   ├── api/v1/                  # Endpoints (~63 routes)
-│   ├── models/                  # SQLAlchemy (15 models)
+│   ├── api/v1/                  # Endpoints (~72 routes)
+│   ├── models/                  # SQLAlchemy (14 models + 2 association tables)
 │   ├── schemas/                 # Pydantic schemas
 │   ├── services/                # Business logic
 │   ├── ai/                      # OpenAI integration
@@ -112,17 +112,18 @@ yume/
 
 | Entity | Purpose |
 |--------|---------|
-| Organization | The business |
+| Organization | The business (also stores onboarding state directly) |
 | Location | Physical location (1+ per org) |
 | Spot | Service station (chair, table) - linked to services |
-| Staff | Employees identified by phone |
+| YumeUser (Staff) | Employees identified by phone (alias: Staff) |
 | ServiceType | What they offer |
-| Customer | End consumer (incremental identity) |
+| EndCustomer (Customer) | End consumer (incremental identity, alias: Customer) |
 | Appointment | Scheduled event |
 | Conversation/Message | WhatsApp threads |
 | Availability | Staff schedules |
-| AuthToken | Magic link tokens |
-| OnboardingSession | Tracks WhatsApp onboarding state for new businesses |
+| AuthToken | Magic link tokens (stored as SHA256 hash) |
+| StaffOnboardingSession | Tracks staff WhatsApp onboarding progress |
+| CustomerFlowSession | Tracks customer conversation flows (booking, cancel, etc.) |
 | FunctionTrace | Function execution traces for debugging |
 
 **Key relationships:**
@@ -211,39 +212,54 @@ NEXT_PUBLIC_YUME_WHATSAPP_NUMBER=17759674528
 ## Current Implementation Status
 
 ### Fully Implemented
-- All 15 database models with proper relationships
-- ~63 API endpoints for all resources
-- Admin dashboard (stats, org management, impersonation, conversations, activity, logs)
-- AI conversation handler with tool calling (customer + staff flows)
-- Message routing (staff vs customer identification)
+- 14 database models + 2 association tables with proper relationships
+- ~72 API endpoints for all resources
+- Admin dashboard (stats, org management, impersonation, conversations, activity, function trace logs)
+- AI conversation handler with tool calling (customer + staff + onboarding flows)
+- Message routing (all 5 routing cases from spec)
 - Availability slot calculation with conflict validation
-- Magic link authentication
+- Magic link authentication (tokens stored as SHA256 hashes)
 - Frontend: login, location management, company settings, schedule page
 - Schedule page with filtering, appointment actions (complete, no-show, cancel)
 - Celery background tasks with 24-hour appointment reminders + trace cleanup
-- WhatsApp onboarding flow (business setup via chat)
+- WhatsApp onboarding flow (business setup via chat with state machine)
+- Staff onboarding flow via WhatsApp (state machine tracked in StaffOnboardingSession)
+- Customer flow sessions (booking, cancel, modify tracked in CustomerFlowSession)
 - Twilio WhatsApp integration (send/receive messages)
 - Twilio number provisioning for businesses
+- Function-level tracing with @traced decorator and admin log viewer
 
 ### Partially Implemented
-- WhatsApp template messages (need Twilio Content setup)
+- WhatsApp template messages (fall back to regular text — need Twilio Content setup)
 - Daily schedule summaries (task not yet created)
-- New booking notifications to owner
+- New booking notifications to owner (not sent after AI booking)
+- handoff_to_human tool (acknowledges but doesn't actually notify owner)
+- Staff conversation persistence (each message starts fresh, no history)
+- Business hours in AI prompts (returns placeholder, not actual location hours)
 
 ### Not Implemented
-- Create/Edit appointment modals in dashboard (deferred - most bookings via WhatsApp)
+- Create/Edit appointment modals in dashboard (deferred — most bookings via WhatsApp)
 - Custom domain configuration (api.yume.mx, app.yume.mx)
+- Customer management page in frontend (API exists, no UI)
+- Availability management UI in frontend (API exists, no UI)
+- AI error recovery (no retry logic for OpenAI API failures)
+- Row-level locking for booking (race condition risk on concurrent bookings)
+- Sentry/error tracking integration
+- send_message_to_customer AI tool
 
 ## Key Files
 
 | File | What it does |
 |------|--------------|
 | `app/api/v1/webhooks.py` | Twilio webhook handler |
-| `app/services/message_router.py` | Staff/customer routing |
+| `app/services/message_router.py` | Staff/customer routing (all 5 cases) |
 | `app/services/conversation.py` | AI orchestration |
 | `app/services/scheduling.py` | Availability calculation + conflict validation |
 | `app/services/onboarding.py` | WhatsApp onboarding flow for new businesses |
-| `app/ai/tools.py` | AI tool definitions |
+| `app/services/customer_flows.py` | Customer booking/cancel/modify state machines |
+| `app/services/staff_onboarding.py` | Staff WhatsApp onboarding flow |
+| `app/services/ai_handler_base.py` | Shared base for AI conversation handlers |
+| `app/ai/tools.py` | AI tool definitions + execution (~1590 lines) |
 | `app/ai/prompts.py` | System prompts (Spanish) |
 | `app/tasks/celery_app.py` | Celery configuration + beat schedule |
 | `app/tasks/reminders.py` | 24-hour appointment reminder tasks |
@@ -273,46 +289,48 @@ Every query must filter by `organization_id` to prevent data leakage.
 - Mock external APIs (Twilio, OpenAI)
 - Test availability edge cases thoroughly
 
-## Visual Verification (Admin Dashboard)
+## Visual Verification (Production via Playwright)
 
-When implementing or modifying admin dashboard features, follow this workflow:
+All UI testing should be done **directly in production** via Playwright MCP, not on localhost.
 
 ### Mandatory Steps
-1. **Start the dev environment** before making UI changes:
-   - Backend: `uvicorn app.main:app --reload` (port 8000)
-   - Frontend: `cd frontend && npm run dev` (port 3000)
-
-2. **After completing any UI change**, use Playwright MCP to verify:
+1. **After completing any UI change**, deploy and use Playwright MCP to verify on production:
    ```
-   - Navigate to http://localhost:3000/admin (or relevant page)
+   - Navigate to https://yume-frontend.onrender.com/admin (or relevant page)
    - Take a screenshot
    - Analyze: Does it match the intended design? Are there errors?
    ```
 
-3. **If something is broken**:
+2. **If something is broken**:
    - Check browser console for errors
-   - Fix the issue
-   - Re-verify with another screenshot
+   - Fix the issue, deploy
+   - Re-verify with another screenshot on production
    - Repeat until it works
 
-4. **Only report "done" when**:
-   - The UI renders correctly (screenshot confirms)
+3. **Only report "done" when**:
+   - The UI renders correctly on production (screenshot confirms)
    - No console errors
    - Interactive elements work (click through flows if needed)
 
 ### Example Verification Commands
 ```
 Use Playwright to:
-1. Navigate to http://localhost:3000/admin
+1. Navigate to https://yume-frontend.onrender.com/admin
 2. Take a screenshot
 3. Click the "Organizations" tab and screenshot
 4. Verify the table loads with data
 ```
 
+### Production URLs for Testing
+- Admin Dashboard: `https://yume-frontend.onrender.com/admin`
+- Business Login: `https://yume-frontend.onrender.com/login`
+- Business Dashboard: `https://yume-frontend.onrender.com/schedule`
+
 ### What NOT to do
-- Never say "done" without visual verification
+- Never say "done" without visual verification on production
 - Never assume code changes work just because there are no type errors
 - Never skip testing interactive flows (buttons, forms, navigation)
+- Never test UI only on localhost — always verify on production
 
 ## Debugging
 

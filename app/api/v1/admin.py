@@ -106,6 +106,36 @@ async def list_organizations(
     ]
 
 
+# Literal path must be defined BEFORE parameterized /organizations/{org_id}
+# to prevent FastAPI from matching "pending-numbers" as a UUID.
+@router.get(
+    "/organizations/pending-numbers",
+    response_model=list[PendingNumberOrg],
+    dependencies=[Depends(require_admin)],
+)
+async def list_pending_number_organizations(
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> list[PendingNumberOrg]:
+    """List organizations waiting for WhatsApp number assignment.
+
+    These are active organizations where the onboarding completed but
+    Twilio number provisioning failed, so they need manual assignment.
+    """
+    orgs = await admin_service.list_pending_number_organizations(db)
+    return [
+        PendingNumberOrg(
+            id=org.id,
+            name=org.name,
+            phone_number=org.phone_number,
+            phone_country_code=org.phone_country_code,
+            status=str(org.status),
+            created_at=org.created_at,
+            owner_name=org.onboarding_data.get("owner_name") if org.onboarding_data else None,
+        )
+        for org in orgs
+    ]
+
+
 @router.get(
     "/organizations/{org_id}",
     response_model=AdminOrganizationDetail,
@@ -471,34 +501,6 @@ async def get_log_trace_detail(
 # =============================================================================
 # Pending Numbers Management
 # =============================================================================
-
-
-@router.get(
-    "/organizations/pending-numbers",
-    response_model=list[PendingNumberOrg],
-    dependencies=[Depends(require_admin)],
-)
-async def list_pending_number_organizations(
-    db: Annotated[AsyncSession, Depends(get_db)],
-) -> list[PendingNumberOrg]:
-    """List organizations waiting for WhatsApp number assignment.
-
-    These are active organizations where the onboarding completed but
-    Twilio number provisioning failed, so they need manual assignment.
-    """
-    orgs = await admin_service.list_pending_number_organizations(db)
-    return [
-        PendingNumberOrg(
-            id=org.id,
-            name=org.name,
-            phone_number=org.phone_number,
-            phone_country_code=org.phone_country_code,
-            status=str(org.status),
-            created_at=org.created_at,
-            owner_name=org.onboarding_data.get("owner_name") if org.onboarding_data else None,
-        )
-        for org in orgs
-    ]
 
 
 @router.post(

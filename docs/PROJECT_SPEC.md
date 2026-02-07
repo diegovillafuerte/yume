@@ -187,7 +187,7 @@ Yume differentiators:
 - **ORM:** SQLAlchemy 2.0 (async)
 - **Migrations:** Alembic
 - **Task Queue:** Redis + Celery (for reminders, async jobs)
-- **AI/LLM:** OpenAI GPT-5.2 (for conversational AI)
+- **AI/LLM:** OpenAI gpt-4.1 (for conversational AI, via function calling)
 
 **WhatsApp Integration:**
 - **API:** Twilio WhatsApp API
@@ -236,6 +236,7 @@ Yume differentiators:
 
 ```python
 # Organization: The business entity (e.g., "Barbería Don Carlos")
+# NOTE: Onboarding state is stored directly on Organization (no separate OnboardingSession model)
 Organization:
     id: UUID
     name: str
@@ -246,6 +247,10 @@ Organization:
     timezone: str            # e.g., "America/Mexico_City"
     status: enum (onboarding, active, suspended, churned)
     settings: JSONB          # Flexible config
+    onboarding_state: str    # Current onboarding step (initiated, collecting_business_info, etc.)
+    onboarding_data: JSONB   # Data collected during onboarding
+    onboarding_conversation_context: JSONB  # AI conversation state during onboarding
+    last_message_at: datetime  # For abandoned session detection
     created_at: datetime
     updated_at: datetime
 
@@ -260,20 +265,24 @@ Location:
     created_at: datetime
     updated_at: datetime
 
-# Staff: People who provide services (also users who can interact via WhatsApp)
-Staff:
+# YumeUser (Staff): People who provide services (also users who can interact via WhatsApp)
+# NOTE: Model class is YumeUser, with backward-compat alias "Staff"
+YumeUser:
     id: UUID
     organization_id: FK → Organization
     location_id: FK → Location (optional, null = all locations)
     name: str
     phone_number: str             # Their personal WhatsApp - used to identify them as staff
     role: enum (owner, employee)
+    permission_level: enum (owner, admin, staff, viewer)  # Finer-grained access control
     permissions: JSONB            # {can_view_schedule: true, can_book: true, can_cancel: true, ...}
     is_active: bool
+    first_message_at: datetime    # Tracks first WhatsApp contact (null = never messaged)
+    default_spot_id: FK → Spot (optional)
     settings: JSONB
     created_at: datetime
     updated_at: datetime
-    
+
     # Unique constraint: (organization_id, phone_number)
     # This phone number is how we identify staff when they message Yume
 
@@ -291,18 +300,21 @@ ServiceType:
     created_at: datetime
     updated_at: datetime
 
-# Customer: End consumers who book appointments
-Customer:
+# EndCustomer (Customer): End consumers who book appointments
+# NOTE: Model class is EndCustomer, with backward-compat alias "Customer"
+EndCustomer:
     id: UUID
     organization_id: FK → Organization
     phone_number: str        # Primary identifier, may be only data initially
     name: str (optional)     # Learned over time
+    name_verified_at: datetime (optional)  # When customer confirmed their name
     email: str (optional)
     notes: str (optional)    # Business owner's notes
+    profile_data: JSONB      # Preferences, history, communication style
     settings: JSONB
     created_at: datetime
     updated_at: datetime
-    
+
     # Unique constraint: (organization_id, phone_number)
 
 # Appointment: A scheduled service event
@@ -397,12 +409,54 @@ Spot:
     # Appointments reference spots to prevent double-booking
 
 # AuthToken: Magic link tokens for web app authentication
+# NOTE: Implementation stores token_hash (SHA256) not plain token for security
 AuthToken:
     id: UUID
     organization_id: FK → Organization
-    token: str               # Random secure token
+    token_hash: str          # SHA256 hash of the token (not stored in plain text)
+    token_type: enum (magic_link)
     expires_at: datetime
-    is_used: bool
+    used_at: datetime (optional)  # Timestamp instead of boolean
+    created_at: datetime
+
+# StaffOnboardingSession: Tracks staff WhatsApp onboarding progress
+StaffOnboardingSession:
+    id: UUID
+    staff_id: FK → YumeUser (unique)
+    organization_id: FK → Organization
+    state: enum (initiated, collecting_name, collecting_availability, showing_tutorial, completed, abandoned)
+    collected_data: JSONB    # Data gathered during onboarding
+    conversation_context: JSONB  # AI conversation state
+    last_message_at: datetime
+    created_at: datetime
+    updated_at: datetime
+
+# CustomerFlowSession: Tracks end-customer conversation flows (booking, cancel, etc.)
+CustomerFlowSession:
+    id: UUID
+    organization_id: FK → Organization
+    conversation_id: FK → Conversation
+    customer_id: FK → EndCustomer
+    flow_type: enum (booking, modify, cancel, rating, inquiry)
+    state: str               # Flow-specific state (e.g., collecting_service, confirming_summary)
+    collected_data: JSONB    # Data gathered during flow
+    created_at: datetime
+    updated_at: datetime
+
+# FunctionTrace: Function execution traces for debugging and observability
+FunctionTrace:
+    id: UUID
+    correlation_id: str      # Groups traces from same request
+    sequence_number: int     # Order within correlation
+    function_name: str
+    trace_type: enum (service, ai_tool, external_api)
+    phone_number: str (optional)
+    organization_id: FK → Organization (optional)
+    input_summary: JSONB     # Captured function args
+    output_summary: JSONB    # Captured return value
+    duration_ms: float (optional)
+    is_error: bool
+    error_message: str (optional)
     created_at: datetime
 ```
 
@@ -558,7 +612,7 @@ class ConversationHandler:
 
         # Call GPT with function calling
         response = await self.client.chat.completions.create(
-            model="gpt-5.2",
+            model="gpt-4.1",
             max_tokens=1024,
             messages=[
                 {"role": "system", "content": system_prompt},
@@ -1997,53 +2051,53 @@ Platform administrators manage all organizations and debug issues.
 ### 4.1 Access admin dashboard
 | # | Requirement | UI | Status |
 |---|-------------|----|----|
-| 4.1.1 | Login with admin password | Web | [ ] |
-| 4.1.2 | Password-based authentication (separate from org auth) | Web | [ ] |
-| 4.1.3 | Stay logged in with admin session | Web | [ ] |
-| 4.1.4 | Log out of admin dashboard | Web | [ ] |
+| 4.1.1 | Login with admin password | Web | [x] |
+| 4.1.2 | Password-based authentication (separate from org auth) | Web | [x] |
+| 4.1.3 | Stay logged in with admin session | Web | [x] |
+| 4.1.4 | Log out of admin dashboard | Web | [x] |
 
 ### 4.2 View platform statistics
 | # | Requirement | UI | Status |
 |---|-------------|----|----|
-| 4.2.1 | See total number of organizations | Web | [ ] |
-| 4.2.2 | See total number of appointments | Web | [ ] |
-| 4.2.3 | See total number of customers | Web | [ ] |
-| 4.2.4 | See total number of messages | Web | [ ] |
-| 4.2.5 | See organizations by status (active, onboarding, suspended) | Web | [ ] |
+| 4.2.1 | See total number of organizations | Web | [x] |
+| 4.2.2 | See total number of appointments | Web | [x] |
+| 4.2.3 | See total number of customers | Web | [x] |
+| 4.2.4 | See total number of messages | Web | [x] |
+| 4.2.5 | See organizations by status (active, onboarding, suspended) | Web | [x] |
 
 ### 4.3 Manage organizations
 | # | Requirement | UI | Status |
 |---|-------------|----|----|
-| 4.3.1 | View list of all organizations | Web | [ ] |
-| 4.3.2 | Search organizations by name | Web | [ ] |
-| 4.3.3 | Filter organizations by status | Web | [ ] |
-| 4.3.4 | View organization details | Web | [ ] |
-| 4.3.5 | View organization's locations | Web | [ ] |
-| 4.3.6 | View organization's staff count | Web | [ ] |
-| 4.3.7 | View organization's customer count | Web | [ ] |
-| 4.3.8 | View organization's appointment count | Web | [ ] |
-| 4.3.9 | Suspend an organization (block login) | Web | [ ] |
-| 4.3.10 | Reactivate a suspended organization | Web | [ ] |
-| 4.3.11 | "Login As" - impersonate any organization | Web | [ ] |
-| 4.3.12 | Impersonation opens new tab with org dashboard | Web | [ ] |
+| 4.3.1 | View list of all organizations | Web | [x] |
+| 4.3.2 | Search organizations by name | Web | [x] |
+| 4.3.3 | Filter organizations by status | Web | [x] |
+| 4.3.4 | View organization details | Web | [x] |
+| 4.3.5 | View organization's locations | Web | [x] |
+| 4.3.6 | View organization's staff count | Web | [x] |
+| 4.3.7 | View organization's customer count | Web | [x] |
+| 4.3.8 | View organization's appointment count | Web | [x] |
+| 4.3.9 | Suspend an organization (block login) | Web | [x] |
+| 4.3.10 | Reactivate a suspended organization | Web | [x] |
+| 4.3.11 | "Login As" - impersonate any organization | Web | [x] |
+| 4.3.12 | Impersonation opens new tab with org dashboard | Web | [x] |
 
 ### 4.4 Debug AI conversations
 | # | Requirement | UI | Status |
 |---|-------------|----|----|
-| 4.4.1 | View all WhatsApp conversations across platform | Web | [ ] |
-| 4.4.2 | Filter conversations by organization | Web | [ ] |
-| 4.4.3 | View conversation message history | Web | [ ] |
-| 4.4.4 | See message sender type (Customer, AI, Staff) | Web | [ ] |
-| 4.4.5 | See message timestamps | Web | [ ] |
-| 4.4.6 | Conversations grouped by date | Web | [ ] |
+| 4.4.1 | View all WhatsApp conversations across platform | Web | [x] |
+| 4.4.2 | Filter conversations by organization | Web | [x] |
+| 4.4.3 | View conversation message history | Web | [x] |
+| 4.4.4 | See message sender type (Customer, AI, Staff) | Web | [x] |
+| 4.4.5 | See message timestamps | Web | [x] |
+| 4.4.6 | Conversations grouped by date | Web | [x] |
 
 ### 4.5 Monitor platform activity
 | # | Requirement | UI | Status |
 |---|-------------|----|----|
-| 4.5.1 | View activity feed of recent events | Web | [ ] |
-| 4.5.2 | See recent organization signups | Web | [ ] |
-| 4.5.3 | See appointment status changes | Web | [ ] |
-| 4.5.4 | Click activity to view related organization | Web | [ ] |
+| 4.5.1 | View activity feed of recent events | Web | [x] |
+| 4.5.2 | See recent organization signups | Web | [x] |
+| 4.5.3 | See appointment status changes | Web | [x] |
+| 4.5.4 | Click activity to view related organization | Web | [x] |
 
 ### 4.6 Perform any organization action
 | # | Requirement | UI | Status |
@@ -2063,82 +2117,82 @@ These requirements apply to the entire system.
 ### 5.1 Language and Localization
 | # | Requirement | Status |
 |---|-------------|--------|
-| 5.1.1 | All AI responses in natural Mexican Spanish | [ ] |
-| 5.1.2 | Use informal "tú" form (not "usted") | [ ] |
-| 5.1.3 | Currency displayed in MXN (Mexican pesos) | [ ] |
-| 5.1.4 | Prices formatted as "$150" (not "150 MXN") | [ ] |
-| 5.1.5 | Dates in Spanish format: "viernes 15 de enero" | [ ] |
-| 5.1.6 | Times in 12-hour format with AM/PM: "3:00 PM" | [ ] |
-| 5.1.7 | No English words in user-facing text | [ ] |
+| 5.1.1 | All AI responses in natural Mexican Spanish | [x] |
+| 5.1.2 | Use informal "tú" form (not "usted") | [x] |
+| 5.1.3 | Currency displayed in MXN (Mexican pesos) | [x] |
+| 5.1.4 | Prices formatted as "$150" (not "150 MXN") | [x] |
+| 5.1.5 | Dates in Spanish format: "viernes 15 de enero" | [x] |
+| 5.1.6 | Times in 12-hour format with AM/PM: "3:00 PM" | [x] |
+| 5.1.7 | No English words in user-facing text | [x] |
 
 ### 5.2 Time and Timezone Handling
 | # | Requirement | Status |
 |---|-------------|--------|
-| 5.2.1 | All times stored in UTC in database | [ ] |
-| 5.2.2 | Times displayed in organization's timezone | [ ] |
-| 5.2.3 | Default timezone: America/Mexico_City | [ ] |
-| 5.2.4 | Natural language date parsing ("mañana", "el lunes", "la próxima semana") | [ ] |
+| 5.2.1 | All times stored in UTC in database | [x] |
+| 5.2.2 | Times displayed in organization's timezone | [x] |
+| 5.2.3 | Default timezone: America/Mexico_City | [x] |
+| 5.2.4 | Natural language date parsing ("mañana", "el lunes", "la próxima semana") | [x] |
 | 5.2.5 | Correct handling of DST transitions | [ ] |
 
 ### 5.3 Security
 | # | Requirement | Status |
 |---|-------------|--------|
-| 5.3.1 | Organization data is isolated (no cross-org access) | [ ] |
-| 5.3.2 | JWT tokens expire appropriately (7 days for web, shorter for admin) | [ ] |
-| 5.3.3 | Magic link tokens single-use and expire in 15 minutes | [ ] |
-| 5.3.4 | Admin password is configurable via environment variable | [ ] |
-| 5.3.5 | No sensitive data (API keys, passwords) in logs | [ ] |
-| 5.3.6 | SQL injection prevention (use ORM, no raw queries) | [ ] |
-| 5.3.7 | XSS prevention in web dashboard | [ ] |
-| 5.3.8 | Suspended organizations cannot login | [ ] |
-| 5.3.9 | WhatsApp webhook validates sender identity | [ ] |
+| 5.3.1 | Organization data is isolated (no cross-org access) | [x] |
+| 5.3.2 | JWT tokens expire appropriately (7 days for web, shorter for admin) | [x] |
+| 5.3.3 | Magic link tokens single-use and expire in 15 minutes | [x] |
+| 5.3.4 | Admin password is configurable via environment variable | [x] |
+| 5.3.5 | No sensitive data (API keys, passwords) in logs | [x] |
+| 5.3.6 | SQL injection prevention (use ORM, no raw queries) | [x] |
+| 5.3.7 | XSS prevention in web dashboard | [x] |
+| 5.3.8 | Suspended organizations cannot login | [x] |
+| 5.3.9 | WhatsApp webhook validates sender identity | [x] |
 
 ### 5.4 Performance
 | # | Requirement | Status |
 |---|-------------|--------|
-| 5.4.1 | WhatsApp webhook responds within 20 seconds | [ ] |
-| 5.4.2 | AI response generated within 15 seconds | [ ] |
-| 5.4.3 | Availability slot calculation handles 30-day range | [ ] |
-| 5.4.4 | Dashboard pages load within 3 seconds | [ ] |
-| 5.4.5 | API endpoints respond within 500ms (non-AI) | [ ] |
+| 5.4.1 | WhatsApp webhook responds within 20 seconds | [x] |
+| 5.4.2 | AI response generated within 15 seconds | [x] |
+| 5.4.3 | Availability slot calculation handles 30-day range | [x] |
+| 5.4.4 | Dashboard pages load within 3 seconds | [x] |
+| 5.4.5 | API endpoints respond within 500ms (non-AI) | [x] |
 
 ### 5.5 Reliability
 | # | Requirement | Status |
 |---|-------------|--------|
-| 5.5.1 | Webhook idempotency (handle duplicate deliveries) | [ ] |
-| 5.5.2 | Message deduplication by WhatsApp message_id | [ ] |
+| 5.5.1 | Webhook idempotency (handle duplicate deliveries) | [x] |
+| 5.5.2 | Message deduplication by WhatsApp message_id | [x] |
 | 5.5.3 | Graceful degradation when AI API is unavailable | [ ] |
 | 5.5.4 | Graceful degradation when WhatsApp API is unavailable | [ ] |
-| 5.5.5 | Database connection pooling and retry logic | [ ] |
+| 5.5.5 | Database connection pooling and retry logic | [x] |
 | 5.5.6 | Background task retry on failure (reminders, notifications) | [ ] |
 
 ### 5.6 Data Integrity
 | # | Requirement | Status |
 |---|-------------|--------|
-| 5.6.1 | Appointments cannot overlap for same staff | [ ] |
-| 5.6.2 | Appointments cannot overlap for same spot | [ ] |
-| 5.6.3 | Cannot delete location if it's the only one | [ ] |
-| 5.6.4 | Cannot delete service with existing appointments | [ ] |
-| 5.6.5 | Cascade deletes handled properly (org → locations → spots) | [ ] |
-| 5.6.6 | Unique constraint on (organization_id, staff phone_number) | [ ] |
-| 5.6.7 | Unique constraint on (organization_id, customer phone_number) | [ ] |
+| 5.6.1 | Appointments cannot overlap for same staff | [x] |
+| 5.6.2 | Appointments cannot overlap for same spot | [x] |
+| 5.6.3 | Cannot delete location if it's the only one | [x] |
+| 5.6.4 | Cannot delete service with existing appointments | [x] |
+| 5.6.5 | Cascade deletes handled properly (org → locations → spots) | [x] |
+| 5.6.6 | Unique constraint on (organization_id, staff phone_number) | [x] |
+| 5.6.7 | Unique constraint on (organization_id, customer phone_number) | [x] |
 
 ### 5.7 Mobile Experience
 | # | Requirement | Status |
 |---|-------------|--------|
-| 5.7.1 | Web dashboard is mobile-responsive | [ ] |
-| 5.7.2 | Login page works on mobile browsers | [ ] |
-| 5.7.3 | Calendar view adapts to mobile screens | [ ] |
-| 5.7.4 | Forms are usable on touch devices | [ ] |
+| 5.7.1 | Web dashboard is mobile-responsive | [x] |
+| 5.7.2 | Login page works on mobile browsers | [x] |
+| 5.7.3 | Calendar view adapts to mobile screens | [x] |
+| 5.7.4 | Forms are usable on touch devices | [x] |
 
 ### 5.8 Error Handling
 | # | Requirement | Status |
 |---|-------------|--------|
-| 5.8.1 | API returns appropriate HTTP status codes | [ ] |
-| 5.8.2 | Error messages are user-friendly in Spanish | [ ] |
-| 5.8.3 | AI handles unknown intents gracefully | [ ] |
-| 5.8.4 | AI offers handoff when stuck in conversation | [ ] |
-| 5.8.5 | Failed webhook returns 200 to prevent Meta retries for permanent errors | [ ] |
+| 5.8.1 | API returns appropriate HTTP status codes | [x] |
+| 5.8.2 | Error messages are user-friendly in Spanish | [x] |
+| 5.8.3 | AI handles unknown intents gracefully | [x] |
+| 5.8.4 | AI offers handoff when stuck in conversation | [x] |
+| 5.8.5 | Failed webhook returns 200 to prevent Meta retries for permanent errors | [x] |
 
 ---
 
@@ -2154,7 +2208,7 @@ These requirements apply to the entire system.
 | 6.1.5 | Meta Embedded Signup for connecting existing business numbers | [x] |
 | 6.1.6 | Twilio number provisioning for new businesses | [x] |
 | 6.1.7 | Handle message status updates (sent, delivered, read) | [ ] |
-| 6.1.8 | Mock mode for local development without Twilio credentials | [ ] |
+| 6.1.8 | Mock mode for local development without Twilio credentials | [x] |
 
 ### 6.2 Message Templates (Meta Approved)
 | # | Requirement | Status |
@@ -2166,10 +2220,10 @@ These requirements apply to the entire system.
 | 6.2.5 | magic_link template created | [ ] |
 | 6.2.6 | All templates approved by Meta | [ ] |
 
-### 6.3 AI/LLM Integration (GPT-5.2)
+### 6.3 AI/LLM Integration (gpt-4.1)
 | # | Requirement | Status |
 |---|-------------|--------|
-| 6.3.1 | OpenAI GPT-5.2 API client implemented | [x] |
+| 6.3.1 | OpenAI gpt-4.1 API client implemented | [x] |
 | 6.3.2 | Tool calling for booking operations | [x] |
 | 6.3.3 | Separate tool sets for customer vs staff | [x] |
 | 6.3.4 | System prompts in Mexican Spanish | [x] |
@@ -2181,9 +2235,9 @@ These requirements apply to the entire system.
 ### 6.4 Background Tasks (Celery)
 | # | Requirement | Status |
 |---|-------------|--------|
-| 6.4.1 | Celery worker configuration | [ ] |
-| 6.4.2 | Redis as message broker | [ ] |
-| 6.4.3 | Appointment reminder task (24h before) | [ ] |
+| 6.4.1 | Celery worker configuration | [x] |
+| 6.4.2 | Redis as message broker | [x] |
+| 6.4.3 | Appointment reminder task (24h before) | [x] |
 | 6.4.4 | Daily schedule summary task | [ ] |
 | 6.4.5 | Task retry on failure | [ ] |
 | 6.4.6 | Task monitoring/visibility | [ ] |
@@ -2198,7 +2252,7 @@ These requirements apply to the entire system.
 | 7.1.1 | PostgreSQL 15+ deployed on Render | [x] |
 | 7.1.2 | Alembic migrations working | [x] |
 | 7.1.3 | All entity migrations created | [x] |
-| 7.1.4 | Indexes on frequently queried fields | [ ] |
+| 7.1.4 | Indexes on frequently queried fields | [x] |
 | 7.1.5 | Database backups configured | [ ] |
 
 ### 7.2 Redis (Deferred)
@@ -2222,7 +2276,7 @@ These requirements apply to the entire system.
 |---|-------------|--------|
 | 7.4.1 | Application logs accessible | [ ] |
 | 7.4.2 | Error tracking (Sentry or equivalent) | [ ] |
-| 7.4.3 | Health check endpoint | [ ] |
+| 7.4.3 | Health check endpoint | [x] |
 | 7.4.4 | Uptime monitoring | [ ] |
 
 ---
