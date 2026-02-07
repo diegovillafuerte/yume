@@ -27,7 +27,10 @@ from app.schemas.logs import (
     CorrelationDetail,
     CorrelationListResponse,
     CorrelationSummary,
+    EnrichedCorrelation,
     TraceItem,
+    UserActivityGroup,
+    UserActivityListResponse,
 )
 from app.services import admin as admin_service
 from app.utils.jwt import create_admin_access_token
@@ -372,6 +375,41 @@ async def list_logs(
 
     return CorrelationListResponse(
         correlations=[CorrelationSummary(**s) for s in summaries],
+        total_count=total_count,
+        has_more=skip + limit < total_count,
+    )
+
+
+@router.get(
+    "/logs/activity",
+    response_model=UserActivityListResponse,
+    dependencies=[Depends(require_admin)],
+)
+async def list_user_activity(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    phone_number: Annotated[str | None, Query()] = None,
+    organization_id: Annotated[UUID | None, Query()] = None,
+    errors_only: Annotated[bool, Query()] = False,
+    skip: int = 0,
+    limit: int = 20,
+) -> UserActivityListResponse:
+    """List user activity groups (phone numbers with enriched correlations).
+
+    Groups interactions by phone number, sorted by most recent activity.
+    Each group contains enriched correlations with flow type, message previews,
+    and AI tools used.
+    """
+    groups, total_count = await admin_service.list_user_activity_groups(
+        db,
+        phone_number=phone_number,
+        organization_id=organization_id,
+        errors_only=errors_only,
+        skip=skip,
+        limit=limit,
+    )
+
+    return UserActivityListResponse(
+        groups=[UserActivityGroup(**g) for g in groups],
         total_count=total_count,
         has_more=skip + limit < total_count,
     )

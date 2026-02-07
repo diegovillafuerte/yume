@@ -431,6 +431,259 @@ async def get_correlation_detail(
     }
 
 
+# =============================================================================
+# User Activity Feed
+# =============================================================================
+
+
+def _derive_flow_type(traces: list) -> tuple[str, str]:
+    """Derive flow type and label from function names in trace chain."""
+    func_names = {t.function_name for t in traces}
+    module_paths = {t.module_path for t in traces}
+
+    if "handle_customer_message" in func_names or "_handle_end_customer" in func_names:
+        return "customer", "Customer Booking"
+    if "_handle_staff_onboarding" in func_names:
+        return "staff_onboarding", "Staff Onboarding"
+    if "handle_staff_message" in func_names or "_handle_business_management" in func_names:
+        return "staff", "Business Management"
+    if "_handle_business_onboarding" in func_names or any(
+        "onboarding" in m for m in module_paths
+    ):
+        return "onboarding", "Business Onboarding"
+    if "_route_central_number_message" in func_names:
+        return "central", "Central Number"
+
+    return "unknown", "Unknown"
+
+
+def _extract_message_preview(traces: list) -> str | None:
+    """Extract inbound message content from handle_*_message input_summary."""
+    handler_names = {
+        "handle_customer_message",
+        "handle_staff_message",
+        "handle_message",
+    }
+    for t in traces:
+        if t.function_name in handler_names and t.input_summary:
+            # input_summary captures all args; look for message_content
+            msg = t.input_summary.get("message_content")
+            if msg and isinstance(msg, str):
+                return msg[:200]
+    return None
+
+
+def _extract_response_preview(traces: list) -> str | None:
+    """Extract AI response text from handle_*_message output_summary."""
+    handler_names = {
+        "handle_customer_message",
+        "handle_staff_message",
+        "handle_message",
+    }
+    for t in traces:
+        if t.function_name in handler_names and t.output_summary:
+            val = t.output_summary.get("_value")
+            if val and isinstance(val, str):
+                return val[:200]
+    return None
+
+
+def _extract_ai_tools(traces: list) -> list[str]:
+    """Extract AI tool names from ai_tool type traces."""
+    tools = []
+    for t in traces:
+        if t.trace_type == "ai_tool" or t.function_name == "_execute_tool":
+            tool_name = None
+            if t.input_summary:
+                tool_name = t.input_summary.get("tool_name")
+            if tool_name and tool_name not in tools:
+                tools.append(tool_name)
+    return tools
+
+
+def _extract_error_summary(traces: list) -> str | None:
+    """Get first error message from traces."""
+    for t in traces:
+        if t.is_error and t.error_message:
+            return t.error_message[:200]
+    return None
+
+
+def _enrich_correlation(
+    correlation_id: UUID,
+    traces: list,
+) -> dict:
+    """Enrich a single correlation with flow type, previews, tools."""
+    flow_type, flow_label = _derive_flow_type(traces)
+    message_preview = _extract_message_preview(traces)
+    response_preview = _extract_response_preview(traces)
+    ai_tools = _extract_ai_tools(traces)
+    error_summary = _extract_error_summary(traces)
+    total_duration = sum(t.duration_ms for t in traces)
+    has_errors = any(t.is_error for t in traces)
+
+    return {
+        "correlation_id": correlation_id,
+        "started_at": traces[0].created_at,
+        "total_duration_ms": total_duration,
+        "trace_count": len(traces),
+        "has_errors": has_errors,
+        "flow_type": flow_type,
+        "flow_label": flow_label,
+        "message_preview": message_preview,
+        "response_preview": response_preview,
+        "ai_tools_used": ai_tools,
+        "error_summary": error_summary,
+    }
+
+
+async def list_user_activity_groups(
+    db: AsyncSession,
+    phone_number: str | None = None,
+    organization_id: UUID | None = None,
+    errors_only: bool = False,
+    skip: int = 0,
+    limit: int = 20,
+) -> tuple[list[dict], int]:
+    """List user activity groups (phone numbers with enriched correlations).
+
+    Returns groups sorted by most recent activity, paginated by phone number.
+    """
+    from collections import defaultdict
+    from sqlalchemy import Integer
+
+    # Step 1: Get distinct phone numbers ordered by latest activity
+    phone_query = (
+        select(
+            FunctionTrace.phone_number,
+            func.max(FunctionTrace.created_at).label("latest_activity"),
+        )
+        .where(FunctionTrace.phone_number.isnot(None))
+        .group_by(FunctionTrace.phone_number)
+    )
+
+    if phone_number:
+        phone_query = phone_query.where(
+            FunctionTrace.phone_number.ilike(f"%{phone_number}%")
+        )
+    if organization_id:
+        phone_query = phone_query.where(
+            FunctionTrace.organization_id == organization_id
+        )
+    if errors_only:
+        phone_query = phone_query.having(
+            func.max(FunctionTrace.is_error.cast(Integer)) == 1
+        )
+
+    phone_query = phone_query.order_by(
+        func.max(FunctionTrace.created_at).desc()
+    )
+
+    # Count total phone numbers
+    count_subq = phone_query.subquery()
+    count_result = await db.execute(
+        select(func.count()).select_from(count_subq)
+    )
+    total_count = count_result.scalar_one()
+
+    # Paginate phone numbers
+    phone_query = phone_query.offset(skip).limit(limit)
+    phone_result = await db.execute(phone_query)
+    phone_rows = phone_result.all()
+
+    if not phone_rows:
+        return [], total_count
+
+    phone_numbers = [row.phone_number for row in phone_rows]
+
+    # Step 2: Get ALL traces for these phone numbers in one batch
+    traces_query = (
+        select(FunctionTrace)
+        .where(FunctionTrace.phone_number.in_(phone_numbers))
+        .order_by(FunctionTrace.created_at.desc(), FunctionTrace.sequence_number)
+    )
+    traces_result = await db.execute(traces_query)
+    all_traces = list(traces_result.scalars().all())
+
+    # Group traces: phone -> correlation_id -> [traces]
+    phone_corr_map: dict[str, dict[UUID, list]] = defaultdict(lambda: defaultdict(list))
+    for t in all_traces:
+        phone_corr_map[t.phone_number][t.correlation_id].append(t)
+
+    # Sort traces within each correlation by sequence_number
+    for phone, corr_map in phone_corr_map.items():
+        for corr_id, traces in corr_map.items():
+            traces.sort(key=lambda t: t.sequence_number)
+
+    # Step 3: Batch lookup org names
+    org_ids = {t.organization_id for t in all_traces if t.organization_id}
+    org_names: dict[UUID, str] = {}
+    if org_ids:
+        org_result = await db.execute(
+            select(Organization.id, Organization.name).where(
+                Organization.id.in_(org_ids)
+            )
+        )
+        org_names = {row.id: row.name for row in org_result.all()}
+
+    # Step 4: Build groups
+    groups = []
+    for phone, latest_activity in phone_rows:
+        corr_map = phone_corr_map.get(phone, {})
+
+        # Enrich each correlation
+        enriched_corrs = []
+        for corr_id, traces in corr_map.items():
+            enriched_corrs.append(_enrich_correlation(corr_id, traces))
+
+        # Sort by most recent first
+        enriched_corrs.sort(key=lambda c: c["started_at"], reverse=True)
+
+        # Determine primary flow type (most common)
+        flow_counts: dict[str, int] = defaultdict(int)
+        for c in enriched_corrs:
+            flow_counts[c["flow_type"]] += 1
+        primary_flow = max(flow_counts, key=flow_counts.get) if flow_counts else "unknown"
+        flow_label_map = {
+            "customer": "Customer Booking",
+            "staff": "Business Management",
+            "onboarding": "Business Onboarding",
+            "staff_onboarding": "Staff Onboarding",
+            "central": "Central Number",
+            "unknown": "Unknown",
+        }
+
+        # Determine org info (from most recent trace)
+        first_org_id = None
+        first_org_name = None
+        for t in all_traces:
+            if t.phone_number == phone and t.organization_id:
+                first_org_id = t.organization_id
+                first_org_name = org_names.get(t.organization_id)
+                break
+
+        error_count = sum(1 for c in enriched_corrs if c["has_errors"])
+        latest_msg = next(
+            (c["message_preview"] for c in enriched_corrs if c["message_preview"]),
+            None,
+        )
+
+        groups.append({
+            "phone_number": phone,
+            "organization_id": first_org_id,
+            "organization_name": first_org_name,
+            "latest_activity": latest_activity,
+            "total_interactions": len(enriched_corrs),
+            "error_count": error_count,
+            "primary_flow_type": primary_flow,
+            "primary_flow_label": flow_label_map.get(primary_flow, "Unknown"),
+            "latest_message_preview": latest_msg,
+            "correlations": enriched_corrs,
+        })
+
+    return groups, total_count
+
+
 async def get_trace_detail(db: AsyncSession, trace_id: UUID) -> dict | None:
     """Get a single trace by ID."""
     result = await db.execute(

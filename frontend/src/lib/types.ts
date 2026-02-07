@@ -324,3 +324,37 @@ export interface LogCorrelationListResponse {
   total_count: number;
   has_more: boolean;
 }
+
+// User Activity Feed types
+export interface EnrichedCorrelation {
+  correlation_id: string;
+  started_at: string;
+  total_duration_ms: number;
+  trace_count: number;
+  has_errors: boolean;
+  flow_type: string;
+  flow_label: string;
+  message_preview: string | null;
+  response_preview: string | null;
+  ai_tools_used: string[];
+  error_summary: string | null;
+}
+
+export interface UserActivityGroup {
+  phone_number: string;
+  organization_id: string | null;
+  organization_name: string | null;
+  latest_activity: string;
+  total_interactions: number;
+  error_count: number;
+  primary_flow_type: string;
+  primary_flow_label: string;
+  latest_message_preview: string | null;
+  correlations: EnrichedCorrelation[];
+}
+
+export interface UserActivityListResponse {
+  groups: UserActivityGroup[];
+  total_count: number;
+  has_more: boolean;
+}
