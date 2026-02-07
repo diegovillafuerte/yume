@@ -359,3 +359,26 @@ export interface UserActivityListResponse {
   total_count: number;
   has_more: boolean;
 }
+
+// Pending Numbers types
+export interface PendingNumberOrg {
+  id: string;
+  name: string | null;
+  phone_number: string;
+  phone_country_code: string;
+  status: string;
+  created_at: string;
+  owner_name: string | null;
+}
+
+export interface AssignNumberRequest {
+  phone_number: string;
+  sender_sid: string;
+}
+
+export interface AssignNumberResponse {
+  success: boolean;
+  phone_number: string;
+  organization_id: string;
+  organization_name: string | null;
+}

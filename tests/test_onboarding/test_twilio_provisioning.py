@@ -1,6 +1,6 @@
 """Tests for Twilio provisioning service.
 
-Tests for TwilioProvisioningService and the provision_number_for_business function.
+Tests for TwilioProvisioningService with the Senders API and fallback strategy.
 """
 
 import pytest
@@ -25,24 +25,29 @@ class TestTwilioProvisioningServiceConfiguration:
         with patch("app.services.twilio_provisioning.settings") as mock_settings:
             mock_settings.twilio_account_sid = "AC123456"
             mock_settings.twilio_auth_token = "auth_token_123"
+            mock_settings.twilio_waba_id = ""
 
             service = TwilioProvisioningService()
             assert service.is_configured is True
+            assert service.is_whatsapp_configured is False
 
     def test_is_configured_without_account_sid(self):
         """Returns False when account_sid is missing."""
         with patch("app.services.twilio_provisioning.settings") as mock_settings:
             mock_settings.twilio_account_sid = None
             mock_settings.twilio_auth_token = "auth_token_123"
+            mock_settings.twilio_waba_id = "waba123"
 
             service = TwilioProvisioningService()
             assert service.is_configured is False
+            assert service.is_whatsapp_configured is False
 
     def test_is_configured_without_auth_token(self):
         """Returns False when auth_token is missing."""
         with patch("app.services.twilio_provisioning.settings") as mock_settings:
             mock_settings.twilio_account_sid = "AC123456"
             mock_settings.twilio_auth_token = None
+            mock_settings.twilio_waba_id = "waba123"
 
             service = TwilioProvisioningService()
             assert service.is_configured is False
@@ -52,9 +57,21 @@ class TestTwilioProvisioningServiceConfiguration:
         with patch("app.services.twilio_provisioning.settings") as mock_settings:
             mock_settings.twilio_account_sid = ""
             mock_settings.twilio_auth_token = ""
+            mock_settings.twilio_waba_id = ""
 
             service = TwilioProvisioningService()
             assert service.is_configured is False
+
+    def test_is_whatsapp_configured_with_waba_id(self):
+        """Returns True when WABA ID is also configured."""
+        with patch("app.services.twilio_provisioning.settings") as mock_settings:
+            mock_settings.twilio_account_sid = "AC123456"
+            mock_settings.twilio_auth_token = "auth_token_123"
+            mock_settings.twilio_waba_id = "waba123"
+
+            service = TwilioProvisioningService()
+            assert service.is_configured is True
+            assert service.is_whatsapp_configured is True
 
 
 class TestListAvailableNumbers:
@@ -65,6 +82,7 @@ class TestListAvailableNumbers:
         with patch("app.services.twilio_provisioning.settings") as mock_settings:
             mock_settings.twilio_account_sid = "AC123456"
             mock_settings.twilio_auth_token = "auth_token"
+            mock_settings.twilio_waba_id = ""
 
             service = TwilioProvisioningService()
 
@@ -95,6 +113,7 @@ class TestListAvailableNumbers:
         with patch("app.services.twilio_provisioning.settings") as mock_settings:
             mock_settings.twilio_account_sid = None
             mock_settings.twilio_auth_token = None
+            mock_settings.twilio_waba_id = ""
 
             service = TwilioProvisioningService()
             numbers = await service.list_available_numbers()
@@ -107,6 +126,7 @@ class TestListAvailableNumbers:
         with patch("app.services.twilio_provisioning.settings") as mock_settings:
             mock_settings.twilio_account_sid = "AC123456"
             mock_settings.twilio_auth_token = "auth_token"
+            mock_settings.twilio_waba_id = ""
 
             service = TwilioProvisioningService()
 
@@ -125,6 +145,7 @@ class TestListAvailableNumbers:
         with patch("app.services.twilio_provisioning.settings") as mock_settings:
             mock_settings.twilio_account_sid = "AC123456"
             mock_settings.twilio_auth_token = "auth_token"
+            mock_settings.twilio_waba_id = ""
 
             service = TwilioProvisioningService()
 
@@ -154,6 +175,7 @@ class TestPurchaseNumber:
         with patch("app.services.twilio_provisioning.settings") as mock_settings:
             mock_settings.twilio_account_sid = "AC123456"
             mock_settings.twilio_auth_token = "auth_token"
+            mock_settings.twilio_waba_id = ""
 
             service = TwilioProvisioningService()
 
@@ -186,6 +208,7 @@ class TestPurchaseNumber:
         with patch("app.services.twilio_provisioning.settings") as mock_settings:
             mock_settings.twilio_account_sid = None
             mock_settings.twilio_auth_token = None
+            mock_settings.twilio_waba_id = ""
 
             service = TwilioProvisioningService()
             result = await service.purchase_number("+525512345678")
@@ -198,6 +221,7 @@ class TestPurchaseNumber:
         with patch("app.services.twilio_provisioning.settings") as mock_settings:
             mock_settings.twilio_account_sid = "AC123456"
             mock_settings.twilio_auth_token = "auth_token"
+            mock_settings.twilio_waba_id = ""
 
             service = TwilioProvisioningService()
 
@@ -211,16 +235,25 @@ class TestPurchaseNumber:
 
             await service.close()
 
-    async def test_configures_webhook_during_purchase(self):
-        """Webhook URL is set in purchase request."""
+
+class TestRegisterWhatsAppSender:
+    """Tests for register_whatsapp_sender method."""
+
+    async def test_registers_sender_successfully(self):
+        """Registers WhatsApp sender with Senders API."""
         with patch("app.services.twilio_provisioning.settings") as mock_settings:
             mock_settings.twilio_account_sid = "AC123456"
             mock_settings.twilio_auth_token = "auth_token"
+            mock_settings.twilio_waba_id = "waba123"
 
             service = TwilioProvisioningService()
 
             mock_response = MagicMock()
-            mock_response.json.return_value = {"sid": "PN123", "phone_number": "+52555"}
+            mock_response.json.return_value = {
+                "sid": "XE123456789",
+                "status": "PENDING_VERIFICATION",
+                "sender_id": "whatsapp:+525512345678",
+            }
             mock_response.raise_for_status = MagicMock()
 
             with patch.object(
@@ -228,59 +261,108 @@ class TestPurchaseNumber:
             ) as mock_post:
                 mock_post.return_value = mock_response
 
-                await service.purchase_number(
+                result = await service.register_whatsapp_sender(
                     phone_number="+525512345678",
-                    webhook_url="https://api.yume.mx/api/v1/webhooks/whatsapp",
+                    business_name="Test Salon",
+                    status_callback_url="https://api.yume.mx/webhooks/sender-status",
                 )
 
-                # Verify webhook URL was passed in data
-                call_kwargs = mock_post.call_args[1]
-                assert call_kwargs["data"]["SmsUrl"] == "https://api.yume.mx/api/v1/webhooks/whatsapp"
+                assert result["sid"] == "XE123456789"
+                assert result["status"] == "PENDING_VERIFICATION"
+
+                # Verify correct API was called
+                call_args = mock_post.call_args
+                assert "Senders" in call_args[0][0]
 
             await service.close()
 
-
-class TestConfigureWebhook:
-    """Tests for configure_webhook method."""
-
-    async def test_configures_webhook_successfully(self):
-        """Updates webhook URL for existing number."""
+    async def test_returns_none_when_waba_not_configured(self):
+        """Returns None when WABA ID is not configured."""
         with patch("app.services.twilio_provisioning.settings") as mock_settings:
             mock_settings.twilio_account_sid = "AC123456"
             mock_settings.twilio_auth_token = "auth_token"
+            mock_settings.twilio_waba_id = ""  # Not configured
 
             service = TwilioProvisioningService()
+            result = await service.register_whatsapp_sender(
+                phone_number="+525512345678",
+                business_name="Test Salon",
+            )
 
-            mock_response = MagicMock()
-            mock_response.raise_for_status = MagicMock()
+            assert result is None
+            await service.close()
+
+    async def test_returns_none_on_api_error(self):
+        """Returns None when Senders API returns error."""
+        with patch("app.services.twilio_provisioning.settings") as mock_settings:
+            mock_settings.twilio_account_sid = "AC123456"
+            mock_settings.twilio_auth_token = "auth_token"
+            mock_settings.twilio_waba_id = "waba123"
+
+            service = TwilioProvisioningService()
 
             with patch.object(
                 service.client, "post", new_callable=AsyncMock
             ) as mock_post:
-                mock_post.return_value = mock_response
+                mock_post.side_effect = httpx.HTTPError("API error")
 
-                result = await service.configure_webhook(
-                    phone_number_sid="PN123456",
-                    webhook_url="https://new-api.yume.mx/webhooks",
+                result = await service.register_whatsapp_sender(
+                    phone_number="+525512345678",
+                    business_name="Test Salon",
                 )
-
-                assert result is True
-                # Verify correct endpoint called
-                call_args = mock_post.call_args
-                assert "PN123456" in call_args[0][0]
+                assert result is None
 
             await service.close()
 
-    async def test_returns_false_when_unconfigured(self):
-        """Returns False when Twilio is not configured."""
+
+class TestGetSenderStatus:
+    """Tests for get_sender_status method."""
+
+    async def test_gets_sender_status_successfully(self):
+        """Gets current sender status."""
         with patch("app.services.twilio_provisioning.settings") as mock_settings:
-            mock_settings.twilio_account_sid = None
-            mock_settings.twilio_auth_token = None
+            mock_settings.twilio_account_sid = "AC123456"
+            mock_settings.twilio_auth_token = "auth_token"
+            mock_settings.twilio_waba_id = "waba123"
 
             service = TwilioProvisioningService()
-            result = await service.configure_webhook("PN123", "https://test.com")
 
-            assert result is False
+            mock_response = MagicMock()
+            mock_response.json.return_value = {
+                "sid": "XE123456789",
+                "status": "ONLINE",
+                "sender_id": "whatsapp:+525512345678",
+            }
+            mock_response.raise_for_status = MagicMock()
+
+            with patch.object(
+                service.client, "get", new_callable=AsyncMock
+            ) as mock_get:
+                mock_get.return_value = mock_response
+
+                result = await service.get_sender_status("XE123456789")
+
+                assert result["status"] == "ONLINE"
+
+            await service.close()
+
+    async def test_returns_none_on_error(self):
+        """Returns None when API call fails."""
+        with patch("app.services.twilio_provisioning.settings") as mock_settings:
+            mock_settings.twilio_account_sid = "AC123456"
+            mock_settings.twilio_auth_token = "auth_token"
+            mock_settings.twilio_waba_id = "waba123"
+
+            service = TwilioProvisioningService()
+
+            with patch.object(
+                service.client, "get", new_callable=AsyncMock
+            ) as mock_get:
+                mock_get.side_effect = httpx.HTTPError("Not found")
+
+                result = await service.get_sender_status("XE123456789")
+                assert result is None
+
             await service.close()
 
 
@@ -292,6 +374,7 @@ class TestReleaseNumber:
         with patch("app.services.twilio_provisioning.settings") as mock_settings:
             mock_settings.twilio_account_sid = "AC123456"
             mock_settings.twilio_auth_token = "auth_token"
+            mock_settings.twilio_waba_id = ""
 
             service = TwilioProvisioningService()
 
@@ -315,6 +398,7 @@ class TestReleaseNumber:
         with patch("app.services.twilio_provisioning.settings") as mock_settings:
             mock_settings.twilio_account_sid = "AC123456"
             mock_settings.twilio_auth_token = "auth_token"
+            mock_settings.twilio_waba_id = ""
 
             service = TwilioProvisioningService()
 
@@ -332,12 +416,54 @@ class TestReleaseNumber:
 class TestProvisionNumberForBusiness:
     """Tests for provision_number_for_business convenience function."""
 
-    async def test_provisions_complete_flow(self):
-        """Lists, purchases, and returns number in one call."""
+    async def test_provisions_complete_flow_with_sender(self):
+        """Lists, purchases, registers sender in one call."""
         with patch(
             "app.services.twilio_provisioning.TwilioProvisioningService"
         ) as MockService:
             mock_instance = MagicMock()
+            mock_instance.is_whatsapp_configured = True
+            mock_instance.list_available_numbers = AsyncMock(
+                return_value=[{"phone_number": "+525512345678"}]
+            )
+            mock_instance.purchase_number = AsyncMock(
+                return_value={
+                    "sid": "PN123456",
+                    "phone_number": "+525512345678",
+                    "friendly_name": "Yume - Test Salon",
+                }
+            )
+            mock_instance.register_whatsapp_sender = AsyncMock(
+                return_value={
+                    "sid": "XE789",
+                    "status": "PENDING_VERIFICATION",
+                }
+            )
+            mock_instance.close = AsyncMock()
+            MockService.return_value = mock_instance
+
+            with patch("app.services.twilio_provisioning.settings") as mock_settings:
+                mock_settings.twilio_senders_webhook_url = "https://test.com/webhook"
+
+                result = await provision_number_for_business(
+                    business_name="Test Salon",
+                    webhook_base_url="https://api.yume.mx",
+                    country_code="MX",
+                )
+
+            assert result is not None
+            assert result["phone_number"] == "+525512345678"
+            assert result["phone_number_sid"] == "PN123456"
+            assert result["sender_sid"] == "XE789"
+            assert result["sender_status"] == "PENDING_VERIFICATION"
+
+    async def test_provisions_without_waba_configured(self):
+        """Provisions number without sender registration when WABA not configured."""
+        with patch(
+            "app.services.twilio_provisioning.TwilioProvisioningService"
+        ) as MockService:
+            mock_instance = MagicMock()
+            mock_instance.is_whatsapp_configured = False  # WABA not configured
             mock_instance.list_available_numbers = AsyncMock(
                 return_value=[{"phone_number": "+525512345678"}]
             )
@@ -354,12 +480,46 @@ class TestProvisionNumberForBusiness:
             result = await provision_number_for_business(
                 business_name="Test Salon",
                 webhook_base_url="https://api.yume.mx",
-                country_code="MX",
             )
 
             assert result is not None
             assert result["phone_number"] == "+525512345678"
-            assert result["phone_number_sid"] == "PN123456"
+            assert result["sender_sid"] is None
+            assert result["sender_status"] is None
+
+    async def test_rollback_on_sender_registration_failure(self):
+        """Releases purchased number if sender registration fails."""
+        with patch(
+            "app.services.twilio_provisioning.TwilioProvisioningService"
+        ) as MockService:
+            mock_instance = MagicMock()
+            mock_instance.is_whatsapp_configured = True
+            mock_instance.list_available_numbers = AsyncMock(
+                return_value=[{"phone_number": "+525512345678"}]
+            )
+            mock_instance.purchase_number = AsyncMock(
+                return_value={
+                    "sid": "PN123456",
+                    "phone_number": "+525512345678",
+                    "friendly_name": "Yume - Test Salon",
+                }
+            )
+            mock_instance.register_whatsapp_sender = AsyncMock(return_value=None)
+            mock_instance.release_number = AsyncMock(return_value=True)
+            mock_instance.close = AsyncMock()
+            MockService.return_value = mock_instance
+
+            with patch("app.services.twilio_provisioning.settings") as mock_settings:
+                mock_settings.twilio_senders_webhook_url = ""
+
+                result = await provision_number_for_business(
+                    business_name="Test Salon",
+                    webhook_base_url="https://api.yume.mx",
+                )
+
+            assert result is None
+            # Verify rollback was called
+            mock_instance.release_number.assert_called_once_with("PN123456")
 
     async def test_returns_none_when_no_numbers_available(self):
         """Returns None if no numbers available."""
@@ -404,6 +564,7 @@ class TestProvisionNumberForBusiness:
             "app.services.twilio_provisioning.TwilioProvisioningService"
         ) as MockService:
             mock_instance = MagicMock()
+            mock_instance.is_whatsapp_configured = False
             mock_instance.list_available_numbers = AsyncMock(
                 return_value=[{"phone_number": "+525512345678"}]
             )
@@ -432,6 +593,7 @@ class TestProvisionNumberForBusiness:
             "app.services.twilio_provisioning.TwilioProvisioningService"
         ) as MockService:
             mock_instance = MagicMock()
+            mock_instance.is_whatsapp_configured = False
             mock_instance.list_available_numbers = AsyncMock(
                 return_value=[{"phone_number": "+525512345678"}]
             )
@@ -460,6 +622,7 @@ class TestProvisionNumberForBusiness:
             "app.services.twilio_provisioning.TwilioProvisioningService"
         ) as MockService:
             mock_instance = MagicMock()
+            mock_instance.is_whatsapp_configured = False
             mock_instance.list_available_numbers = AsyncMock(
                 return_value=[{"phone_number": "+525512345678"}]
             )

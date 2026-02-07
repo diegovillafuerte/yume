@@ -756,3 +756,68 @@ async def get_trace_detail(db: AsyncSession, trace_id: UUID) -> dict | None:
         "organization_id": trace.organization_id,
         "created_at": trace.created_at,
     }
+
+
+# =============================================================================
+# Pending Numbers Management
+# =============================================================================
+
+
+async def list_pending_number_organizations(
+    db: AsyncSession,
+) -> list[Organization]:
+    """List organizations waiting for WhatsApp number assignment.
+
+    These are active orgs where settings.number_status == 'pending'.
+    """
+    from app.models import OrganizationStatus
+
+    result = await db.execute(
+        select(Organization)
+        .where(
+            Organization.status == OrganizationStatus.ACTIVE.value,
+            Organization.settings["number_status"].astext == "pending",
+        )
+        .order_by(Organization.created_at.desc())
+    )
+    return list(result.scalars().all())
+
+
+async def assign_whatsapp_number(
+    db: AsyncSession,
+    org_id: UUID,
+    phone_number: str,
+    sender_sid: str,
+) -> Organization | None:
+    """Manually assign a WhatsApp number to an organization.
+
+    Args:
+        db: Database session
+        org_id: Organization ID
+        phone_number: WhatsApp phone number (E.164 format)
+        sender_sid: Twilio sender SID
+
+    Returns:
+        Updated organization or None if not found
+    """
+    result = await db.execute(select(Organization).where(Organization.id == org_id))
+    org = result.scalar_one_or_none()
+
+    if not org:
+        return None
+
+    # Update org settings with assigned number
+    settings_dict = dict(org.settings or {})
+    settings_dict["number_status"] = "active"
+    settings_dict["whatsapp_ready"] = True
+    settings_dict["twilio_phone_number"] = phone_number
+    settings_dict["twilio_sender_sid"] = sender_sid
+    settings_dict["whatsapp_provider"] = "twilio"
+
+    org.settings = settings_dict
+    org.whatsapp_phone_number_id = phone_number
+
+    await db.flush()
+    await db.refresh(org)
+
+    return org

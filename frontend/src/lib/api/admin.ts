@@ -8,6 +8,9 @@ import type {
   AdminConversationDetail,
   AdminActivityItem,
   AdminImpersonateResponse,
+  PendingNumberOrg,
+  AssignNumberRequest,
+  AssignNumberResponse,
 } from '@/lib/types';
 
 export async function adminLogin(password: string): Promise<AdminLoginResponse> {
@@ -84,4 +87,21 @@ export async function getActivityFeed(limit?: number): Promise<AdminActivityItem
 
 export async function deleteOrganization(orgId: string): Promise<void> {
   await api.delete(`/admin/organizations/${orgId}`);
+}
+
+// Pending Numbers
+export async function listPendingNumberOrganizations(): Promise<PendingNumberOrg[]> {
+  const response = await api.get<PendingNumberOrg[]>('/admin/organizations/pending-numbers');
+  return response.data;
+}
+
+export async function assignWhatsAppNumber(
+  orgId: string,
+  request: AssignNumberRequest
+): Promise<AssignNumberResponse> {
+  const response = await api.post<AssignNumberResponse>(
+    `/admin/organizations/${orgId}/assign-number`,
+    request
+  );
+  return response.data;
 }

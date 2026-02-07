@@ -5,10 +5,12 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Form, Request, status
 from fastapi.responses import PlainTextResponse
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
 from app.config import get_settings
+from app.models import Organization
 from app.services.message_router import MessageRouter
 from app.services.whatsapp import WhatsAppClient
 from app.services.tracing import start_trace_context, save_pending_traces, clear_trace_context
@@ -150,3 +152,82 @@ async def webhook_status() -> dict[str, str]:
         "provider": "twilio",
         "whatsapp_number": settings.twilio_whatsapp_number or "not configured",
     }
+
+
+@router.post("/twilio/sender-status", status_code=status.HTTP_200_OK)
+async def receive_sender_status_webhook(
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict[str, str]:
+    """Receive Twilio sender status change notifications.
+
+    Called when a WhatsApp sender transitions between states:
+    CREATING → PENDING_VERIFICATION → VERIFYING → TWILIO_REVIEW → ONLINE
+
+    Updates Organization.settings with current sender status.
+    When status becomes ONLINE, the number is ready for WhatsApp.
+    """
+    try:
+        data = await request.json()
+    except Exception:
+        # Twilio may send form-encoded data
+        form = await request.form()
+        data = dict(form)
+
+    sender_sid = data.get("sid") or data.get("Sid")
+    new_status = data.get("status") or data.get("Status")
+    sender_id = data.get("senderId") or data.get("SenderId")  # Format: whatsapp:+525512345678
+
+    logger.info(
+        f"\n{'='*60}\n"
+        f"📡 TWILIO SENDER STATUS WEBHOOK\n"
+        f"{'='*60}\n"
+        f"  SenderId: {sender_id}\n"
+        f"  SenderSid: {sender_sid}\n"
+        f"  Status: {new_status}\n"
+        f"{'='*60}"
+    )
+
+    # Extract phone number from senderId
+    phone_number = None
+    if sender_id:
+        phone_number = (
+            sender_id.replace("whatsapp:", "")
+            if sender_id.startswith("whatsapp:")
+            else sender_id
+        )
+
+    if phone_number:
+        # Find org by provisioned number (stored in settings.twilio_phone_number)
+        result = await db.execute(
+            select(Organization).where(
+                Organization.settings["twilio_phone_number"].astext == phone_number
+            )
+        )
+        org = result.scalar_one_or_none()
+
+        if org:
+            logger.info(f"  Found org: {org.id} ({org.name})")
+
+            settings_dict = dict(org.settings or {})
+            settings_dict["sender_status"] = new_status
+            settings_dict["sender_sid"] = sender_sid
+
+            if new_status == "ONLINE":
+                # Number is ready for WhatsApp!
+                settings_dict["whatsapp_ready"] = True
+                settings_dict["number_status"] = "active"
+                org.whatsapp_phone_number_id = phone_number
+                logger.info(
+                    f"  🎉 WhatsApp sender ONLINE! Org {org.id} is ready to receive messages"
+                )
+
+            org.settings = settings_dict
+            await db.commit()
+            logger.info(f"  Updated org settings with sender status: {new_status}")
+        else:
+            logger.warning(f"  No org found with twilio_phone_number: {phone_number}")
+    else:
+        logger.warning("  No senderId in webhook payload")
+
+    return {"status": "received"}

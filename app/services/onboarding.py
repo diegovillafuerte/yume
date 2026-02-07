@@ -846,44 +846,82 @@ class OnboardingHandler:
                     country_code=country_code,
                 )
 
-                if not result:
+                if result:
+                    # SUCCESS: Store the provisioned number in onboarding data
+                    collected["twilio_provisioned_number"] = result["phone_number"]
+                    collected["twilio_phone_number_sid"] = result["phone_number_sid"]
+                    collected["twilio_sender_sid"] = result.get("sender_sid")
+                    collected["twilio_sender_status"] = result.get("sender_status")
+                    collected["number_status"] = "provisioned"
+                    org.onboarding_data = collected
+                    await self.db.flush()
+
+                    logger.info(
+                        f"Provisioned Twilio number for {business_name}: "
+                        f"{result['phone_number']} (sender_status={result.get('sender_status')})"
+                    )
+
+                    # Status-aware response
+                    sender_status = result.get("sender_status")
+                    if sender_status == "ONLINE":
+                        return {
+                            "success": True,
+                            "message": "Número listo para WhatsApp",
+                            "phone_number": result["phone_number"],
+                            "formatted_message": (
+                                f"¡Tu número {result['phone_number']} ya está activo para WhatsApp!\n\n"
+                                f"¿Quieres que active tu cuenta ahora?"
+                            )
+                        }
+                    else:
+                        return {
+                            "success": True,
+                            "message": "Número en proceso de activación",
+                            "phone_number": result["phone_number"],
+                            "sender_status": sender_status,
+                            "formatted_message": (
+                                f"¡Te asigné el número {result['phone_number']}!\n\n"
+                                f"Está en proceso de activación para WhatsApp (toma unos minutos). "
+                                f"Te avisaremos cuando esté listo.\n\n"
+                                f"¿Quieres que active tu cuenta ahora?"
+                            )
+                        }
+                else:
+                    # FALLBACK: Queue for manual provisioning
+                    collected["number_status"] = "pending"
+                    org.onboarding_data = collected
+                    await self.db.flush()
+
+                    logger.warning(
+                        f"Provisioning failed for {business_name}, queued for manual assignment"
+                    )
+
                     return {
-                        "success": False,
-                        "error": "No se pudo provisionar un número en este momento.",
-                        "fallback_message": (
-                            "No pudimos obtener un número nuevo en este momento. "
-                            "Por favor intenta de nuevo más tarde o contacta soporte."
+                        "success": True,  # Don't block onboarding
+                        "number_status": "pending",
+                        "formatted_message": (
+                            "En este momento no tenemos números disponibles, pero no te preocupes.\n\n"
+                            "Te asignaremos uno en las próximas horas y te avisaremos por WhatsApp.\n\n"
+                            "Mientras tanto, puedes seguir usando este chat para administrar tu agenda.\n\n"
+                            "¿Quieres activar tu cuenta ahora?"
                         )
                     }
 
-                # Store the provisioned number in onboarding data
-                collected["twilio_provisioned_number"] = result["phone_number"]
-                collected["twilio_phone_number_sid"] = result["phone_number_sid"]
+            except Exception as e:
+                logger.error(f"Error provisioning Twilio number: {e}", exc_info=True)
+                # FALLBACK on exception too
+                collected["number_status"] = "pending"
                 org.onboarding_data = collected
                 await self.db.flush()
 
-                logger.info(f"Provisioned Twilio number for {business_name}: {result['phone_number']}")
-
                 return {
-                    "success": True,
-                    "message": "Número provisionado exitosamente",
-                    "phone_number": result["phone_number"],
-                    "phone_number_sid": result["phone_number_sid"],
+                    "success": True,  # Don't block onboarding
+                    "number_status": "pending",
                     "formatted_message": (
-                        f"¡Listo! Te asigné el número {result['phone_number']} para tu negocio.\n\n"
-                        f"Este será el número donde tus clientes pueden escribir para agendar citas.\n\n"
-                        f"¿Quieres que active tu cuenta ahora?"
-                    )
-                }
-
-            except Exception as e:
-                logger.error(f"Error provisioning Twilio number: {e}", exc_info=True)
-                return {
-                    "success": False,
-                    "error": str(e),
-                    "fallback_message": (
-                        "Hubo un problema al obtener tu número. "
-                        "Por favor intenta de nuevo más tarde o contacta soporte."
+                        "Hubo un problema al obtener tu número, pero no te preocupes.\n\n"
+                        "Te asignaremos uno pronto y te avisaremos por WhatsApp.\n\n"
+                        "Mientras tanto, puedes usar este chat para administrar tu agenda.\n\n"
+                        "¿Quieres activar tu cuenta ahora?"
                     )
                 }
 
@@ -1015,17 +1053,36 @@ class OnboardingHandler:
         org_settings["currency"] = "MXN"
         org_settings["business_type"] = collected.get("business_type", "salon")
 
-        if collected.get("twilio_provisioned_number"):
+        number_status = collected.get("number_status", "pending")
+
+        if collected.get("twilio_provisioned_number") and number_status == "provisioned":
             # Twilio provisioned number path
             org.whatsapp_phone_number_id = collected["twilio_provisioned_number"]
             org_settings["whatsapp_provider"] = "twilio"
             org_settings["twilio_phone_number"] = collected["twilio_provisioned_number"]
             org_settings["twilio_phone_number_sid"] = collected.get("twilio_phone_number_sid")
-            logger.info(f"Using Twilio provisioned number: {collected['twilio_provisioned_number']}")
+            org_settings["sender_sid"] = collected.get("twilio_sender_sid")
+            org_settings["sender_status"] = collected.get("twilio_sender_status")
+            org_settings["number_status"] = "provisioned"
+            # Mark as ready if sender is already ONLINE
+            if collected.get("twilio_sender_status") == "ONLINE":
+                org_settings["whatsapp_ready"] = True
+                org_settings["number_status"] = "active"
+            logger.info(
+                f"Using Twilio provisioned number: {collected['twilio_provisioned_number']} "
+                f"(sender_status={collected.get('twilio_sender_status')})"
+            )
+        elif number_status == "pending":
+            # Fallback: no number assigned yet, queued for manual assignment
+            # Don't set whatsapp_phone_number_id - they don't have one yet
+            org_settings["whatsapp_provider"] = "pending"
+            org_settings["number_status"] = "pending"
+            logger.info(f"Org {org.id} activated with pending number assignment")
         else:
-            # No WhatsApp setup yet - use owner phone as placeholder
+            # No WhatsApp setup at all - use owner phone as placeholder
             org.whatsapp_phone_number_id = org.phone_number
             org_settings["whatsapp_provider"] = "pending"
+            org_settings["number_status"] = "pending"
             logger.info(f"No WhatsApp number provisioned, using owner phone as placeholder")
 
         org.settings = org_settings

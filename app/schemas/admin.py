@@ -117,3 +117,39 @@ class AdminOrgStatusUpdate(BaseModel):
     """Request to update organization status."""
 
     status: str = Field(..., description="New status: 'active' or 'suspended'")
+
+
+# Pending Numbers
+class PendingNumberOrg(BaseModel):
+    """Organization waiting for WhatsApp number assignment."""
+
+    id: UUID
+    name: str | None
+    phone_number: str
+    phone_country_code: str
+    status: str
+    created_at: datetime
+    owner_name: str | None = None
+
+    class Config:
+        from_attributes = True
+
+
+class AssignNumberRequest(BaseModel):
+    """Request to assign a WhatsApp number to an organization."""
+
+    phone_number: str = Field(
+        ..., description="WhatsApp phone number in E.164 format (e.g., +525512345678)"
+    )
+    sender_sid: str = Field(
+        ..., description="Twilio sender SID from the Senders API"
+    )
+
+
+class AssignNumberResponse(BaseModel):
+    """Response after assigning a number."""
+
+    success: bool
+    phone_number: str
+    organization_id: UUID
+    organization_name: str | None

@@ -1,15 +1,14 @@
 """Twilio number provisioning service.
 
-This service handles provisioning dedicated WhatsApp numbers for businesses.
-Following the PRD's hybrid approach:
-1. Business completes onboarding via Yume's main number
-2. We provision a dedicated Twilio number for their customers
-3. (Future) Option to migrate their existing number
+This service handles provisioning dedicated WhatsApp numbers for businesses
+using Twilio's WhatsApp Senders API (v2).
 
-Note: Twilio WhatsApp number provisioning requires:
-- Purchasing a phone number from Twilio
-- Registering it with WhatsApp Business
-- Configuring webhook URLs
+Flow:
+1. Business completes onboarding via Yume's main number
+2. We purchase a phone number from Twilio
+3. Register it as a WhatsApp sender under Yume's WABA
+4. Wait for sender status to become ONLINE (async via webhook)
+5. (Future) Option to migrate their existing number
 """
 
 import logging
@@ -29,19 +28,31 @@ class TwilioProvisioningError(Exception):
 
 
 class TwilioProvisioningService:
-    """Service for provisioning Twilio WhatsApp numbers."""
+    """Service for provisioning Twilio WhatsApp numbers using Senders API."""
 
     def __init__(self):
         """Initialize Twilio provisioning service."""
         self.account_sid = settings.twilio_account_sid
         self.auth_token = settings.twilio_auth_token
-        self.base_url = f"https://api.twilio.com/2010-04-01/Accounts/{self.account_sid}"
+        self.waba_id = settings.twilio_waba_id
+
+        # API endpoints
+        self.phone_numbers_url = (
+            f"https://api.twilio.com/2010-04-01/Accounts/{self.account_sid}"
+        )
+        self.senders_url = "https://messaging.twilio.com/v2/Channels/Senders"
+
         self.client = httpx.AsyncClient(timeout=30.0)
 
     @property
     def is_configured(self) -> bool:
-        """Check if Twilio is properly configured."""
+        """Check if Twilio is properly configured for basic operations."""
         return bool(self.account_sid and self.auth_token)
+
+    @property
+    def is_whatsapp_configured(self) -> bool:
+        """Check if Twilio is configured for WhatsApp Senders API."""
+        return bool(self.is_configured and self.waba_id)
 
     async def list_available_numbers(
         self,
@@ -63,7 +74,7 @@ class TwilioProvisioningService:
             logger.warning("Twilio not configured, returning empty list")
             return []
 
-        url = f"{self.base_url}/AvailablePhoneNumbers/{country_code}/Mobile.json"
+        url = f"{self.phone_numbers_url}/AvailablePhoneNumbers/{country_code}/Mobile.json"
         params = {"PageSize": limit}
         if area_code:
             params["AreaCode"] = area_code
@@ -92,7 +103,7 @@ class TwilioProvisioningService:
         Args:
             phone_number: Phone number to purchase (E.164 format)
             friendly_name: Human-readable name for the number
-            webhook_url: URL for incoming message webhooks
+            webhook_url: URL for incoming message webhooks (for SMS, not WhatsApp)
 
         Returns:
             Purchased number details or None on failure
@@ -101,7 +112,7 @@ class TwilioProvisioningService:
             logger.warning("Twilio not configured, cannot purchase number")
             return None
 
-        url = f"{self.base_url}/IncomingPhoneNumbers.json"
+        url = f"{self.phone_numbers_url}/IncomingPhoneNumbers.json"
         data = {"PhoneNumber": phone_number}
 
         if friendly_name:
@@ -119,16 +130,146 @@ class TwilioProvisioningService:
             return response.json()
         except httpx.HTTPError as e:
             logger.error(f"Failed to purchase number: {e}")
-            if hasattr(e, 'response') and e.response is not None:
+            if hasattr(e, "response") and e.response is not None:
                 logger.error(f"Response: {e.response.text}")
             return None
+
+    async def register_whatsapp_sender(
+        self,
+        phone_number: str,
+        business_name: str,
+        status_callback_url: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Register a phone number as WhatsApp sender under Yume's WABA.
+
+        Uses Twilio's Senders API (v2) to register the number for WhatsApp.
+
+        Args:
+            phone_number: Phone number in E.164 format (e.g., +525512345678)
+            business_name: Display name for WhatsApp (must follow Meta guidelines)
+            status_callback_url: Webhook for status updates (sender state changes)
+
+        Returns:
+            Sender details including sid, status, or None on failure
+            Status will typically be PENDING_VERIFICATION or CREATING initially
+        """
+        if not self.is_whatsapp_configured:
+            logger.warning(
+                "Twilio WABA not configured, cannot register WhatsApp sender"
+            )
+            return None
+
+        sender_id = f"whatsapp:{phone_number}"
+
+        payload = {
+            "SenderId": sender_id,
+            "Configuration.WabaId": self.waba_id,
+            "Configuration.Profile.Name": business_name,
+        }
+
+        if status_callback_url:
+            payload["StatusCallbackUrl"] = status_callback_url
+
+        try:
+            response = await self.client.post(
+                self.senders_url,
+                data=payload,
+                auth=(self.account_sid, self.auth_token),
+            )
+            response.raise_for_status()
+            result = response.json()
+            logger.info(
+                f"Registered WhatsApp sender: {sender_id}, "
+                f"status={result.get('status')}, sid={result.get('sid')}"
+            )
+            return result
+        except httpx.HTTPError as e:
+            logger.error(f"Failed to register WhatsApp sender: {e}")
+            if hasattr(e, "response") and e.response is not None:
+                logger.error(f"Response: {e.response.text}")
+            return None
+
+    async def get_sender_status(self, sender_sid: str) -> dict[str, Any] | None:
+        """Get current status of a WhatsApp sender.
+
+        Sender status values:
+        - CREATING: Sender is being created
+        - PENDING_VERIFICATION: Waiting for phone verification
+        - VERIFYING: Verification in progress
+        - TWILIO_REVIEW: Under Twilio review
+        - ONLINE: Ready to send/receive messages
+        - OFFLINE: Temporarily offline
+        - DRAFT: Not yet submitted
+
+        Args:
+            sender_sid: The Twilio sender SID
+
+        Returns:
+            Sender details including current status, or None on failure
+        """
+        if not self.is_configured:
+            return None
+
+        url = f"{self.senders_url}/{sender_sid}"
+
+        try:
+            response = await self.client.get(
+                url,
+                auth=(self.account_sid, self.auth_token),
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPError as e:
+            logger.error(f"Failed to get sender status: {e}")
+            return None
+
+    async def submit_verification_code(
+        self,
+        sender_sid: str,
+        verification_code: str,
+    ) -> bool:
+        """Submit SMS/voice verification code for a sender.
+
+        Some sender registrations require phone verification. This method
+        submits the verification code received via SMS or voice call.
+
+        Args:
+            sender_sid: The Twilio sender SID
+            verification_code: The verification code received
+
+        Returns:
+            True if verification was submitted successfully
+        """
+        if not self.is_configured:
+            return False
+
+        url = f"{self.senders_url}/{sender_sid}"
+        payload = {
+            "Configuration.VerificationCode": verification_code,
+        }
+
+        try:
+            response = await self.client.post(
+                url,
+                data=payload,
+                auth=(self.account_sid, self.auth_token),
+            )
+            response.raise_for_status()
+            logger.info(f"Submitted verification code for sender {sender_sid}")
+            return True
+        except httpx.HTTPError as e:
+            logger.error(f"Failed to submit verification code: {e}")
+            return False
 
     async def configure_webhook(
         self,
         phone_number_sid: str,
         webhook_url: str,
     ) -> bool:
-        """Configure webhook URL for a phone number.
+        """Configure webhook URL for a phone number (SMS only).
+
+        Note: For WhatsApp, webhooks are configured at the sender level,
+        not the phone number level.
 
         Args:
             phone_number_sid: Twilio phone number SID
@@ -140,7 +281,7 @@ class TwilioProvisioningService:
         if not self.is_configured:
             return False
 
-        url = f"{self.base_url}/IncomingPhoneNumbers/{phone_number_sid}.json"
+        url = f"{self.phone_numbers_url}/IncomingPhoneNumbers/{phone_number_sid}.json"
         data = {"SmsUrl": webhook_url}
 
         try:
@@ -167,7 +308,7 @@ class TwilioProvisioningService:
         if not self.is_configured:
             return False
 
-        url = f"{self.base_url}/IncomingPhoneNumbers/{phone_number_sid}.json"
+        url = f"{self.phone_numbers_url}/IncomingPhoneNumbers/{phone_number_sid}.json"
 
         try:
             response = await self.client.delete(
@@ -190,25 +331,27 @@ async def provision_number_for_business(
     webhook_base_url: str,
     country_code: str = "MX",
 ) -> dict[str, Any] | None:
-    """Provision a new phone number for a business.
+    """Provision a new phone number for a business and register for WhatsApp.
 
     This is a convenience function that:
     1. Lists available numbers
     2. Purchases the first available one
-    3. Configures the webhook
+    3. Registers it as a WhatsApp sender under Yume's WABA
+    4. If sender registration fails, releases the purchased number (rollback)
 
     Args:
-        business_name: Name of the business (for friendly name)
+        business_name: Name of the business (for friendly name and WhatsApp profile)
         webhook_base_url: Base URL for webhooks (e.g., https://api.yume.mx)
         country_code: Country code for the number
 
     Returns:
-        Dict with phone_number, phone_number_sid, or None on failure
+        Dict with phone_number, phone_number_sid, sender_sid, sender_status,
+        or None on failure
     """
     service = TwilioProvisioningService()
 
     try:
-        # List available numbers
+        # Step 1: List available numbers
         available = await service.list_available_numbers(
             country_code=country_code,
             limit=1,
@@ -218,7 +361,7 @@ async def provision_number_for_business(
             logger.error("No phone numbers available")
             return None
 
-        # Purchase the first available
+        # Step 2: Purchase the first available number
         number_to_buy = available[0]["phone_number"]
         purchased = await service.purchase_number(
             phone_number=number_to_buy,
@@ -230,11 +373,51 @@ async def provision_number_for_business(
             logger.error("Failed to purchase number")
             return None
 
-        return {
-            "phone_number": purchased["phone_number"],
-            "phone_number_sid": purchased["sid"],
-            "friendly_name": purchased.get("friendly_name"),
-        }
+        phone_number = purchased["phone_number"]
+        phone_number_sid = purchased["sid"]
+        logger.info(f"Purchased number: {phone_number} (SID: {phone_number_sid})")
+
+        # Step 3: Register as WhatsApp sender (if WABA is configured)
+        if service.is_whatsapp_configured:
+            status_callback_url = (
+                settings.twilio_senders_webhook_url
+                or f"{webhook_base_url}/api/v1/webhooks/twilio/sender-status"
+            )
+
+            sender = await service.register_whatsapp_sender(
+                phone_number=phone_number,
+                business_name=business_name,
+                status_callback_url=status_callback_url,
+            )
+
+            if not sender:
+                # Rollback: release the purchased number
+                logger.warning(
+                    f"Failed to register WhatsApp sender, rolling back number purchase"
+                )
+                await service.release_number(phone_number_sid)
+                return None
+
+            return {
+                "phone_number": phone_number,
+                "phone_number_sid": phone_number_sid,
+                "sender_sid": sender.get("sid"),
+                "sender_status": sender.get("status"),
+                "friendly_name": purchased.get("friendly_name"),
+            }
+        else:
+            # WABA not configured - return without sender registration
+            # This allows number purchase to work without WhatsApp setup
+            logger.warning(
+                "WABA not configured, number purchased but not registered for WhatsApp"
+            )
+            return {
+                "phone_number": phone_number,
+                "phone_number_sid": phone_number_sid,
+                "sender_sid": None,
+                "sender_status": None,
+                "friendly_name": purchased.get("friendly_name"),
+            }
 
     finally:
         await service.close()

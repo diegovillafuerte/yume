@@ -22,6 +22,9 @@ from app.schemas.admin import (
     AdminOrganizationSummary,
     AdminOrgStatusUpdate,
     AdminStats,
+    AssignNumberRequest,
+    AssignNumberResponse,
+    PendingNumberOrg,
 )
 from app.schemas.logs import (
     CorrelationDetail,
@@ -463,3 +466,77 @@ async def get_log_trace_detail(
         raise HTTPException(status_code=404, detail="Trace not found in this correlation")
 
     return TraceItem(**trace_data)
+
+
+# =============================================================================
+# Pending Numbers Management
+# =============================================================================
+
+
+@router.get(
+    "/organizations/pending-numbers",
+    response_model=list[PendingNumberOrg],
+    dependencies=[Depends(require_admin)],
+)
+async def list_pending_number_organizations(
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> list[PendingNumberOrg]:
+    """List organizations waiting for WhatsApp number assignment.
+
+    These are active organizations where the onboarding completed but
+    Twilio number provisioning failed, so they need manual assignment.
+    """
+    orgs = await admin_service.list_pending_number_organizations(db)
+    return [
+        PendingNumberOrg(
+            id=org.id,
+            name=org.name,
+            phone_number=org.phone_number,
+            phone_country_code=org.phone_country_code,
+            status=str(org.status),
+            created_at=org.created_at,
+            owner_name=org.onboarding_data.get("owner_name") if org.onboarding_data else None,
+        )
+        for org in orgs
+    ]
+
+
+@router.post(
+    "/organizations/{org_id}/assign-number",
+    response_model=AssignNumberResponse,
+    dependencies=[Depends(require_admin)],
+)
+async def assign_whatsapp_number(
+    org_id: UUID,
+    request: AssignNumberRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> AssignNumberResponse:
+    """Manually assign a WhatsApp number to an organization.
+
+    Use this when Twilio provisioning failed during onboarding and you've
+    manually provisioned a number in the Twilio Console.
+
+    The phone_number should be in E.164 format (e.g., +525512345678).
+    The sender_sid is the Twilio sender SID from the Senders API.
+    """
+    org = await admin_service.assign_whatsapp_number(
+        db,
+        org_id=org_id,
+        phone_number=request.phone_number,
+        sender_sid=request.sender_sid,
+    )
+
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+
+    await db.commit()
+
+    # TODO: Send WhatsApp notification to owner that their number is ready
+    # await send_number_ready_notification(org)
+
+    return AssignNumberResponse(
+        success=True,
+        phone_number=request.phone_number,
+        organization_id=org.id,
+        organization_name=org.name,
+    )

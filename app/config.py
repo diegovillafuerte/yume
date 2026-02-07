@@ -43,6 +43,8 @@ class Settings(BaseSettings):
     twilio_account_sid: str = ""
     twilio_auth_token: str = ""
     twilio_whatsapp_number: str = ""  # Format: whatsapp:+14155238886
+    twilio_waba_id: str = ""  # Yume's WhatsApp Business Account ID for Senders API
+    twilio_senders_webhook_url: str = ""  # Callback URL for sender status changes
 
     # OpenAI
     openai_api_key: str = ""
