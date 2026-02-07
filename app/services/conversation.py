@@ -6,7 +6,6 @@ including tool execution and conversation state management.
 
 from __future__ import annotations
 
-import json
 import logging
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
@@ -15,6 +14,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.services.ai_handler_base import ToolCallingMixin
 from app.services.tracing import traced
 from app.ai.client import OpenAIClient, get_openai_client
 from app.ai.prompts import build_customer_system_prompt, build_staff_system_prompt
@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 MAX_HISTORY_MESSAGES = 20
 
 
-class ConversationHandler:
+class ConversationHandler(ToolCallingMixin):
     """Handles AI-powered conversations with customers and staff."""
 
     def __init__(
@@ -180,11 +180,8 @@ class ConversationHandler:
     ) -> str:
         """Process a message with GPT, handling tool calls.
 
-        This implements the tool use loop:
-        1. Send message to GPT
-        2. If GPT wants to use a tool, execute it
-        3. Send tool result back to GPT
-        4. Repeat until GPT gives a final response
+        This wraps the shared tool loop from ToolCallingMixin with
+        conversation-specific tool execution (customer/staff context).
 
         Args:
             system_prompt: System prompt for GPT
@@ -196,52 +193,21 @@ class ConversationHandler:
         Returns:
             Final response text from GPT
         """
-        max_iterations = 5  # Prevent infinite loops
-        response = None
-
-        for iteration in range(max_iterations):
-            logger.debug(f"Tool loop iteration {iteration + 1}")
-
-            response = self.client.create_message(
-                system_prompt=system_prompt,
-                messages=messages,
-                tools=tools,
+        async def execute_tool(tool_name: str, tool_input: dict[str, Any]) -> dict[str, Any]:
+            """Execute tool using ToolHandler with customer/staff context."""
+            return await self.tool_handler.execute_tool(
+                tool_name=tool_name,
+                tool_input=tool_input,
+                customer=customer,
+                staff=staff,
             )
 
-            # Check if GPT wants to use tools
-            if self.client.has_tool_calls(response):
-                tool_calls = self.client.extract_tool_calls(response)
-                logger.info(f"GPT wants to use {len(tool_calls)} tool(s)")
-
-                # Add assistant's response (with tool calls) to messages
-                messages.append(
-                    self.client.format_assistant_message_with_tool_calls(response)
-                )
-
-                # Execute each tool and add results as separate messages
-                for tool_call in tool_calls:
-                    result = await self.tool_handler.execute_tool(
-                        tool_name=tool_call["name"],
-                        tool_input=tool_call["input"],
-                        customer=customer,
-                        staff=staff,
-                    )
-
-                    # Add tool result message in OpenAI format
-                    messages.append(
-                        self.client.format_tool_result_message(tool_call["id"], result)
-                    )
-
-            else:
-                # GPT gave a final response
-                response_text = self.client.extract_text_response(response)
-                logger.info(f"GPT final response: {response_text[:100]}...")
-
-                return response_text
-
-        # If we hit max iterations, return what we have
-        logger.warning("Hit max tool iterations, returning last response")
-        return self.client.extract_text_response(response) if response else "Lo siento, hubo un error."
+        return await self._process_with_tools_generic(
+            system_prompt=system_prompt,
+            messages=messages,
+            tools=tools,
+            tool_executor=execute_tool,
+        )
 
     async def _get_services(self) -> list[ServiceType]:
         """Get active services for the organization."""

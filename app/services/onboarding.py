@@ -7,7 +7,7 @@ Architecture (as of Feb 2026):
 - Organization is created immediately on first message with status=ONBOARDING
 - Onboarding progress is tracked in Organization.onboarding_state
 - Collected data stored in Organization.onboarding_data
-- AI conversation history in Organization.onboarding_conversation_context
+- Conversation history stored in Message table (NOT JSONB) to prevent race conditions
 - When complete, Organization.status changes to ACTIVE
 
 Flow:
@@ -25,15 +25,23 @@ Flow:
 import logging
 from datetime import datetime, timezone
 from typing import Any
+from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.services.ai_handler_base import ToolCallingMixin
 from app.services.tracing import traced
 from app.ai.client import OpenAIClient, get_openai_client
 from app.models import (
+    Conversation,
+    ConversationStatus,
     Location,
+    Message,
+    MessageContentType,
+    MessageDirection,
+    MessageSenderType,
     Organization,
     OrganizationStatus,
     ServiceType,
@@ -404,11 +412,14 @@ Cuando el usuario termine de agregar servicios:
 """
 
 
-class OnboardingHandler:
+class OnboardingHandler(ToolCallingMixin):
     """Handles business onboarding conversations.
 
     This creates Organizations immediately and tracks onboarding state
     directly in the Organization model.
+
+    Uses Message table for conversation history (like ConversationHandler)
+    to prevent race conditions when messages arrive quickly.
     """
 
     def __init__(
@@ -507,6 +518,10 @@ class OnboardingHandler:
     ) -> str:
         """Handle an incoming message during onboarding.
 
+        Uses Message table storage (like ConversationHandler) to prevent
+        race conditions when messages arrive quickly. Each message is stored
+        as an atomic INSERT, eliminating the lost-update problem with JSONB.
+
         Args:
             org: Organization being onboarded
             message_content: User's message
@@ -523,79 +538,148 @@ class OnboardingHandler:
         if not self.client.is_configured:
             return self._get_fallback_response(org)
 
+        # Get or create conversation for this onboarding (stored in Message table)
+        conversation = await self._get_or_create_onboarding_conversation(org)
+
+        # Store incoming message (atomic INSERT - no race condition)
+        await self._store_message(
+            conversation.id,
+            MessageDirection.INBOUND,
+            message_content,
+        )
+
+        # Get history from Message table (always current)
+        history = await self._get_conversation_history(conversation.id)
+
         # Build system prompt
         system_prompt = build_onboarding_system_prompt(org)
 
-        # Get conversation history from context
-        history = org.onboarding_conversation_context.get("messages", [])
+        # Process with AI and tools using shared mixin
+        async def execute_tool(tool_name: str, tool_input: dict[str, Any]) -> dict[str, Any]:
+            return await self._execute_tool(org, tool_name, tool_input)
 
-        # Add current message
-        history.append({"role": "user", "content": message_content})
+        response_text = await self._process_with_tools_generic(
+            system_prompt=system_prompt,
+            messages=history,
+            tools=ONBOARDING_TOOLS,
+            tool_executor=execute_tool,
+        )
 
-        # Process with AI and tools
-        response_text = await self._process_with_tools(org, system_prompt, history)
-
-        # Update conversation history (keep last 20 messages)
-        history.append({"role": "assistant", "content": response_text})
-        context = dict(org.onboarding_conversation_context or {})
-        context["messages"] = history[-20:]
-        org.onboarding_conversation_context = context
+        # Store AI response (atomic INSERT)
+        await self._store_message(
+            conversation.id,
+            MessageDirection.OUTBOUND,
+            response_text,
+        )
 
         await self.db.flush()
 
         return response_text
 
-    @traced
-    async def _process_with_tools(
-        self,
-        org: Organization,
-        system_prompt: str,
-        messages: list[dict[str, Any]],
-    ) -> str:
-        """Process message with AI, handling tool calls.
+    async def _get_or_create_onboarding_conversation(self, org: Organization) -> Conversation:
+        """Get or create Conversation for onboarding.
+
+        Stores conversation_id in org.onboarding_data for persistence.
 
         Args:
             org: Organization being onboarded
-            system_prompt: System prompt
-            messages: Conversation history
 
         Returns:
-            Final response text
+            Conversation for this onboarding
         """
-        max_iterations = 5
-
-        for iteration in range(max_iterations):
-            response = self.client.create_message(
-                system_prompt=system_prompt,
-                messages=messages,
-                tools=ONBOARDING_TOOLS,
-            )
-
-            if self.client.has_tool_calls(response):
-                tool_calls = self.client.extract_tool_calls(response)
-                logger.info(f"Onboarding AI wants to use {len(tool_calls)} tool(s)")
-
-                # Add assistant message with tool calls
-                messages.append(
-                    self.client.format_assistant_message_with_tool_calls(response)
+        # Check if we already have a conversation_id stored
+        conv_id_str = (org.onboarding_data or {}).get("conversation_id")
+        if conv_id_str:
+            try:
+                conv_id = UUID(conv_id_str)
+                result = await self.db.execute(
+                    select(Conversation).where(Conversation.id == conv_id)
                 )
+                conv = result.scalar_one_or_none()
+                if conv:
+                    return conv
+            except (ValueError, TypeError):
+                pass  # Invalid UUID, create new
 
-                # Execute each tool
-                for tool_call in tool_calls:
-                    result = await self._execute_tool(
-                        org,
-                        tool_call["name"],
-                        tool_call["input"],
-                    )
-                    messages.append(
-                        self.client.format_tool_result_message(tool_call["id"], result)
-                    )
-            else:
-                # Final response
-                return self.client.extract_text_response(response)
+        # Create new conversation (no end_customer for onboarding)
+        conversation = Conversation(
+            organization_id=org.id,
+            end_customer_id=None,  # No customer for onboarding
+            status=ConversationStatus.ACTIVE.value,
+            context={"type": "onboarding"},
+            last_message_at=datetime.now(timezone.utc),
+        )
+        self.db.add(conversation)
+        await self.db.flush()
+        await self.db.refresh(conversation)
 
-        logger.warning("Hit max iterations in onboarding")
-        return self.client.extract_text_response(response) if response else "Lo siento, hubo un error."
+        # Store reference in onboarding_data
+        org_data = dict(org.onboarding_data or {})
+        org_data["conversation_id"] = str(conversation.id)
+        org.onboarding_data = org_data
+
+        logger.info(f"Created onboarding conversation {conversation.id} for org {org.id}")
+        return conversation
+
+    async def _get_conversation_history(self, conversation_id: UUID) -> list[dict[str, Any]]:
+        """Get history from Message table (same pattern as ConversationHandler).
+
+        Args:
+            conversation_id: Conversation ID
+
+        Returns:
+            List of messages in OpenAI format
+        """
+        result = await self.db.execute(
+            select(Message)
+            .where(Message.conversation_id == conversation_id)
+            .order_by(Message.created_at.desc())
+            .limit(20)
+        )
+        messages = list(reversed(result.scalars().all()))
+
+        history = []
+        for msg in messages:
+            role = "user" if msg.direction == MessageDirection.INBOUND.value else "assistant"
+            history.append({
+                "role": role,
+                "content": msg.content,
+            })
+
+        return history
+
+    async def _store_message(
+        self,
+        conversation_id: UUID,
+        direction: MessageDirection,
+        content: str,
+    ) -> Message:
+        """Store message in Message table.
+
+        Args:
+            conversation_id: Conversation to store in
+            direction: INBOUND or OUTBOUND
+            content: Message content
+
+        Returns:
+            Created Message
+        """
+        sender_type = (
+            MessageSenderType.END_CUSTOMER.value
+            if direction == MessageDirection.INBOUND
+            else MessageSenderType.AI.value
+        )
+
+        message = Message(
+            conversation_id=conversation_id,
+            direction=direction.value,
+            sender_type=sender_type,
+            content_type=MessageContentType.TEXT.value,
+            content=content,
+        )
+        self.db.add(message)
+        await self.db.flush()
+        return message
 
     @traced(trace_type="ai_tool")
     async def _execute_tool(

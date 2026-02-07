@@ -33,8 +33,8 @@ class Conversation(Base, UUIDMixin, TimestampMixin):
     organization_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
     )
-    end_customer_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("end_customers.id", ondelete="CASCADE"), nullable=False
+    end_customer_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("end_customers.id", ondelete="CASCADE"), nullable=True
     )
     whatsapp_conversation_id: Mapped[str | None] = mapped_column(
         String(100), nullable=True
@@ -55,7 +55,7 @@ class Conversation(Base, UUIDMixin, TimestampMixin):
     organization: Mapped["Organization"] = relationship(
         "Organization", back_populates="conversations"
     )
-    end_customer: Mapped["EndCustomer"] = relationship("EndCustomer", back_populates="conversations")
+    end_customer: Mapped["EndCustomer | None"] = relationship("EndCustomer", back_populates="conversations")
     messages: Mapped[list["Message"]] = relationship(
         "Message", back_populates="conversation", cascade="all, delete-orphan"
     )
