@@ -43,6 +43,7 @@ class OrganizationConnectWhatsApp(BaseModel):
 
     whatsapp_phone_number_id: str = Field(..., description="Meta's phone number ID")
     whatsapp_waba_id: str = Field(..., description="WhatsApp Business Account ID")
+    phone_number: str = Field(..., description="Business WhatsApp phone number (E.164)")
 
 
 # Response schema

@@ -1,12 +1,14 @@
 """WhatsApp API client - handles sending messages via Twilio."""
 
 import logging
+import uuid
 from typing import Any
 
 import httpx
 
 from app.services.tracing import traced
 from app.config import get_settings
+from app.models import Organization
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -50,6 +52,7 @@ class WhatsAppClient:
         phone_number_id: str,
         to: str,
         message: str,
+        from_number: str | None = None,
     ) -> dict[str, Any]:
         """Send a text message via WhatsApp using Twilio.
 
@@ -62,22 +65,29 @@ class WhatsAppClient:
             Response from Twilio API (or mock response)
         """
         if self.mock_mode:
+            from_display = from_number or self.from_number or phone_number_id
             logger.info(
                 f"📱 [MOCK] Sending WhatsApp message:\n"
-                f"  From: {self.from_number}\n"
+                f"  From: {from_display}\n"
                 f"  To: {to}\n"
                 f"  Message: {message}"
             )
             return {
-                "sid": f"mock_msg_{to}",
+                "sid": f"mock_msg_{uuid.uuid4().hex}",
                 "status": "queued",
                 "to": to,
-                "from": self.from_number,
+                "from": from_display,
             }
 
-        return await self._send_via_twilio(to=to, message=message)
+        return await self._send_via_twilio(
+            to=to,
+            message=message,
+            from_number=from_number or phone_number_id or None,
+        )
 
-    async def _send_via_twilio(self, to: str, message: str) -> dict[str, Any]:
+    async def _send_via_twilio(
+        self, to: str, message: str, from_number: str | None = None
+    ) -> dict[str, Any]:
         """Send message via Twilio API (Parlo's main number).
 
         Args:
@@ -91,7 +101,10 @@ class WhatsAppClient:
 
         # Format numbers for WhatsApp
         to_formatted = self._format_whatsapp_number(to)
-        from_formatted = self._format_whatsapp_number(self.from_number)
+        from_candidate = from_number or self.from_number
+        if not from_candidate:
+            raise ValueError("Missing WhatsApp sender number")
+        from_formatted = self._format_whatsapp_number(from_candidate)
 
         data = {
             "From": from_formatted,
@@ -122,6 +135,7 @@ class WhatsAppClient:
         template_name: str,
         language_code: str = "es_MX",
         components: list[dict] | None = None,
+        from_number: str | None = None,
     ) -> dict[str, Any]:
         """Send a template message via WhatsApp (Twilio).
 
@@ -140,18 +154,19 @@ class WhatsAppClient:
             Response from Twilio API (or mock response)
         """
         if self.mock_mode:
+            from_display = from_number or self.from_number or phone_number_id
             logger.info(
                 f"📱 [MOCK] Sending WhatsApp template:\n"
-                f"  From: {self.from_number}\n"
+                f"  From: {from_display}\n"
                 f"  To: {to}\n"
                 f"  Template: {template_name}\n"
                 f"  Components: {components}"
             )
             return {
-                "sid": f"mock_template_{to}",
+                "sid": f"mock_template_{uuid.uuid4().hex}",
                 "status": "queued",
                 "to": to,
-                "from": self.from_number,
+                "from": from_display,
             }
 
         # For Twilio Content Templates, you'd use ContentSid
@@ -166,8 +181,37 @@ class WhatsAppClient:
             phone_number_id=phone_number_id,
             to=to,
             message=f"[Template: {template_name}]",
+            from_number=from_number,
         )
 
     async def close(self) -> None:
         """Close the HTTP client."""
         await self.client.aclose()
+
+
+def resolve_whatsapp_sender(
+    organization: Organization, settings_obj: object | None = None
+) -> str | None:
+    """Resolve the correct WhatsApp sender number for an organization.
+
+    Priority:
+    1) Organization.settings["twilio_phone_number"]
+    2) Organization.whatsapp_phone_number_id if it's an E.164/whatsapp: number
+    3) Organization.phone_number (business WhatsApp number)
+    4) Global settings.twilio_whatsapp_number fallback
+    """
+    settings_local = settings_obj or get_settings()
+    org_settings = organization.settings or {}
+
+    twilio_number = org_settings.get("twilio_phone_number")
+    if twilio_number:
+        return twilio_number
+
+    phone_id = organization.whatsapp_phone_number_id
+    if phone_id and (phone_id.startswith("+") or phone_id.startswith("whatsapp:")):
+        return phone_id
+
+    if organization.phone_number:
+        return organization.phone_number
+
+    return settings_local.twilio_whatsapp_number

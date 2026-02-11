@@ -516,6 +516,7 @@ class OnboardingHandler(ToolCallingMixin):
         self,
         org: Organization,
         message_content: str,
+        message_id: str | None = None,
     ) -> str:
         """Handle an incoming message during onboarding.
 
@@ -526,6 +527,7 @@ class OnboardingHandler(ToolCallingMixin):
         Args:
             org: Organization being onboarded
             message_content: User's message
+            message_id: WhatsApp message ID (for deduplication)
 
         Returns:
             AI response text
@@ -547,6 +549,7 @@ class OnboardingHandler(ToolCallingMixin):
             conversation.id,
             MessageDirection.INBOUND,
             message_content,
+            whatsapp_message_id=message_id,
         )
 
         # Get history from Message table (always current)
@@ -654,6 +657,7 @@ class OnboardingHandler(ToolCallingMixin):
         conversation_id: UUID,
         direction: MessageDirection,
         content: str,
+        whatsapp_message_id: str | None = None,
     ) -> Message:
         """Store message in Message table.
 
@@ -677,6 +681,7 @@ class OnboardingHandler(ToolCallingMixin):
             sender_type=sender_type,
             content_type=MessageContentType.TEXT.value,
             content=content,
+            whatsapp_message_id=whatsapp_message_id,
         )
         self.db.add(message)
         await self.db.flush()
@@ -1194,9 +1199,12 @@ class OnboardingHandler(ToolCallingMixin):
 
         if collected.get("twilio_provisioned_number") and number_status == "provisioned":
             # Twilio provisioned number path
-            org.whatsapp_phone_number_id = collected["twilio_provisioned_number"]
+            provisioned_number = normalize_phone_number(collected["twilio_provisioned_number"])
+            org.phone_number = provisioned_number
+            org.phone_country_code = self._extract_country_code(provisioned_number)
+            org.whatsapp_phone_number_id = provisioned_number
             org_settings["whatsapp_provider"] = "twilio"
-            org_settings["twilio_phone_number"] = collected["twilio_provisioned_number"]
+            org_settings["twilio_phone_number"] = provisioned_number
             org_settings["twilio_phone_number_sid"] = collected.get("twilio_phone_number_sid")
             org_settings["sender_sid"] = collected.get("twilio_sender_sid")
             org_settings["sender_status"] = collected.get("twilio_sender_status")
@@ -1236,17 +1244,17 @@ class OnboardingHandler(ToolCallingMixin):
             phone: Phone number like +521234567890
 
         Returns:
-            Country code like "52"
+            Country code like "+52"
         """
         if phone.startswith("+"):
             phone = phone[1:]
         # Mexican numbers
         if phone.startswith("52"):
-            return "52"
+            return "+52"
         # US/Canada
         if phone.startswith("1"):
-            return "1"
-        return "52"  # Default to Mexico
+            return "+1"
+        return "+52"  # Default to Mexico
 
     def _get_fallback_response(self, org: Organization) -> str:
         """Get fallback response when AI is not configured.

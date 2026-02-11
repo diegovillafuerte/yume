@@ -80,6 +80,17 @@ async def connect_whatsapp(
     db: AsyncSession, org: Organization, whatsapp_data: OrganizationConnectWhatsApp
 ) -> Organization:
     """Connect WhatsApp to organization via Embedded Signup."""
+    normalized_phone = normalize_phone_number(whatsapp_data.phone_number)
+    # Derive country code (default to Mexico if unknown)
+    if normalized_phone.startswith("+52"):
+        country_code = "+52"
+    elif normalized_phone.startswith("+1"):
+        country_code = "+1"
+    else:
+        country_code = "+52"
+
+    org.phone_number = normalized_phone
+    org.phone_country_code = country_code
     org.whatsapp_phone_number_id = whatsapp_data.whatsapp_phone_number_id
     org.whatsapp_waba_id = whatsapp_data.whatsapp_waba_id
     org.status = OrganizationStatus.ACTIVE.value

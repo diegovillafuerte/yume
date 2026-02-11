@@ -82,6 +82,7 @@ def send_appointment_reminder(appointment_id: str) -> dict:
 
         from app.config import get_settings
         from app.models import Appointment, EndCustomer, Organization, ServiceType
+        from app.services.whatsapp import WhatsAppClient, resolve_whatsapp_sender
 
         settings = get_settings()
         engine = create_async_engine(settings.async_database_url)
@@ -94,7 +95,7 @@ def send_appointment_reminder(appointment_id: str) -> dict:
             query = (
                 select(Appointment)
                 .options(
-                    joinedload(Appointment.customer),
+                    joinedload(Appointment.end_customer),
                     joinedload(Appointment.organization),
                     joinedload(Appointment.service_type),
                 )
@@ -113,7 +114,7 @@ def send_appointment_reminder(appointment_id: str) -> dict:
                 return {"success": False, "error": "Reminder already sent"}
 
             # Get customer phone
-            customer = appointment.customer
+            customer = appointment.end_customer
             organization = appointment.organization
             service_type = appointment.service_type
 
@@ -153,24 +154,26 @@ def send_appointment_reminder(appointment_id: str) -> dict:
                 f"Te esperamos!"
             )
 
-            # Send via Twilio (or log in dev mode)
-            if settings.twilio_account_sid and settings.twilio_auth_token:
-                try:
-                    from twilio.rest import Client
+            # Send via WhatsApp client (Twilio)
+            whatsapp = WhatsAppClient(mock_mode=not settings.twilio_account_sid)
+            try:
+                from_number = resolve_whatsapp_sender(organization) or settings.twilio_whatsapp_number
+                if not from_number:
+                    logger.error("No WhatsApp sender number configured for reminders")
+                    return {"success": False, "error": "No WhatsApp sender configured"}
 
-                    client = Client(settings.twilio_account_sid, settings.twilio_auth_token)
-
-                    client.messages.create(
-                        from_=settings.twilio_whatsapp_number,
-                        body=message,
-                        to=f"whatsapp:{customer.phone_number}",
-                    )
-                    logger.info(f"Sent reminder to {customer.phone_number}")
-                except Exception as e:
-                    logger.error(f"Failed to send reminder via Twilio: {e}")
-                    return {"success": False, "error": str(e)}
-            else:
-                logger.info(f"[DEV] Would send reminder to {customer.phone_number}: {message}")
+                await whatsapp.send_text_message(
+                    phone_number_id=from_number,
+                    to=customer.phone_number,
+                    message=message,
+                    from_number=from_number,
+                )
+                logger.info(f"Sent reminder to {customer.phone_number}")
+            except Exception as e:
+                logger.error(f"Failed to send reminder via WhatsApp: {e}")
+                return {"success": False, "error": str(e)}
+            finally:
+                await whatsapp.close()
 
             # Mark reminder as sent
             appointment.reminder_sent_at = datetime.now(timezone.utc)
