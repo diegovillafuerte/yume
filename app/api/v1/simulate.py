@@ -1,6 +1,6 @@
 """Simulation endpoints for testing message flows without real WhatsApp.
 
-Admin-only. Only registered when APP_ENV != production.
+Admin-only. Available in all environments.
 """
 
 import logging
