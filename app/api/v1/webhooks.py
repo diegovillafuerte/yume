@@ -1,6 +1,9 @@
 """WhatsApp webhook endpoints - receive messages from Twilio."""
 
 import logging
+import base64
+import hashlib
+import hmac
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Form, Request, status
@@ -44,6 +47,16 @@ def _extract_phone_number(twilio_number: str) -> str:
     return phone
 
 
+def _verify_twilio_signature(
+    request_url: str, params: dict[str, str], signature: str, auth_token: str
+) -> bool:
+    """Verify Twilio webhook signature."""
+    data = request_url + "".join(f"{k}{params[k]}" for k in sorted(params))
+    digest = hmac.new(auth_token.encode(), data.encode(), hashlib.sha1).digest()
+    expected = base64.b64encode(digest).decode()
+    return hmac.compare_digest(expected, signature)
+
+
 @router.post("/whatsapp", status_code=status.HTTP_200_OK)
 async def receive_twilio_webhook(
     request: Request,
@@ -81,6 +94,29 @@ async def receive_twilio_webhook(
         f"  ProfileName: {ProfileName}\n"
         f"{'='*80}"
     )
+
+    # Verify Twilio signature (if enabled)
+    validate_signature = settings.twilio_validate_signature
+    if settings.is_development and not settings.twilio_auth_token:
+        validate_signature = False
+
+    if validate_signature:
+        signature = request.headers.get("X-Twilio-Signature", "")
+        if not settings.twilio_auth_token:
+            logger.error("Twilio signature validation enabled but TWILIO_AUTH_TOKEN is missing")
+            return PlainTextResponse(content="", status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        form = await request.form()
+        params = {k: (v if isinstance(v, str) else str(v)) for k, v in form.items()}
+
+        if not signature or not _verify_twilio_signature(
+            request_url=str(request.url),
+            params=params,
+            signature=signature,
+            auth_token=settings.twilio_auth_token,
+        ):
+            logger.warning("Invalid Twilio signature for webhook request")
+            return PlainTextResponse(content="", status_code=status.HTTP_403_FORBIDDEN)
 
     # Extract phone numbers early for trace context
     sender_phone = _extract_phone_number(From)
