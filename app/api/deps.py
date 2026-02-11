@@ -18,6 +18,7 @@ __all__ = [
     "AsyncSession",
     "get_organization_dependency",
     "get_current_organization",
+    "require_org_access",
     "PaginationParams",
 ]
 
@@ -44,6 +45,43 @@ async def get_organization_dependency(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Organization {org_id} not found",
         )
+    return org
+
+
+async def require_org_access(
+    org_id: UUID,
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> Organization:
+    """Require valid JWT and ensure it matches the requested org_id."""
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    token_org_id = get_organization_id_from_token(credentials.credentials)
+    if token_org_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    if token_org_id != org_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized for this organization",
+        )
+
+    org = await org_service.get_organization(db, org_id)
+    if not org:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Organization {org_id} not found",
+        )
+
     return org
 
 

@@ -6,7 +6,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_db, get_organization_dependency
+from app.api.deps import get_db, require_org_access
 from app.models import Organization, Spot
 from app.schemas.spot import (
     SpotCreate,
@@ -27,7 +27,7 @@ router = APIRouter(tags=["spots"])
 )
 async def list_spots(
     location_id: UUID,
-    org: Annotated[Organization, Depends(get_organization_dependency)],
+    org: Annotated[Organization, Depends(require_org_access)],
     db: Annotated[AsyncSession, Depends(get_db)],
     active_only: Annotated[bool, Query(description="Only return active spots")] = True,
 ) -> list[Spot]:
@@ -53,7 +53,7 @@ async def list_spots(
 async def create_spot(
     location_id: UUID,
     spot_data: SpotCreate,
-    org: Annotated[Organization, Depends(get_organization_dependency)],
+    org: Annotated[Organization, Depends(require_org_access)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> Spot:
     """Create a new spot for a location."""
@@ -77,7 +77,7 @@ async def create_spot(
 )
 async def get_spot(
     spot_id: UUID,
-    org: Annotated[Organization, Depends(get_organization_dependency)],
+    org: Annotated[Organization, Depends(require_org_access)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> Spot:
     """Get spot details."""
@@ -107,7 +107,7 @@ async def get_spot(
 async def update_spot(
     spot_id: UUID,
     spot_data: SpotUpdate,
-    org: Annotated[Organization, Depends(get_organization_dependency)],
+    org: Annotated[Organization, Depends(require_org_access)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> Spot:
     """Update a spot."""
@@ -138,7 +138,7 @@ async def update_spot(
 )
 async def delete_spot(
     spot_id: UUID,
-    org: Annotated[Organization, Depends(get_organization_dependency)],
+    org: Annotated[Organization, Depends(require_org_access)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> None:
     """Delete a spot (soft delete)."""
@@ -169,7 +169,7 @@ async def delete_spot(
 async def assign_spot_services(
     spot_id: UUID,
     assignment: SpotServiceAssignment,
-    org: Annotated[Organization, Depends(get_organization_dependency)],
+    org: Annotated[Organization, Depends(require_org_access)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> Spot:
     """Update which services can be performed at this spot."""

@@ -6,7 +6,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_db, get_organization_dependency
+from app.api.deps import get_db, require_org_access
 from app.models import Organization
 from app.schemas.organization import (
     OrganizationConnectWhatsApp,
@@ -41,7 +41,7 @@ async def create_organization(
     summary="Get organization by ID",
 )
 async def get_organization(
-    org: Annotated[Organization, Depends(get_organization_dependency)],
+    org: Annotated[Organization, Depends(require_org_access)],
 ) -> Organization:
     """Get organization details by ID."""
     return org
@@ -54,7 +54,7 @@ async def get_organization(
 )
 async def update_organization(
     org_data: OrganizationUpdate,
-    org: Annotated[Organization, Depends(get_organization_dependency)],
+    org: Annotated[Organization, Depends(require_org_access)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> Organization:
     """Update organization details."""
@@ -70,7 +70,7 @@ async def update_organization(
 )
 async def connect_whatsapp(
     whatsapp_data: OrganizationConnectWhatsApp,
-    org: Annotated[Organization, Depends(get_organization_dependency)],
+    org: Annotated[Organization, Depends(require_org_access)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> Organization:
     """Connect WhatsApp via Embedded Signup (onboarding step 2)."""

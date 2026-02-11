@@ -6,7 +6,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_db, get_organization_dependency
+from app.api.deps import get_db, require_org_access
 from app.models import Organization, ServiceType
 from app.schemas.service_type import (
     ServiceTypeCreate,
@@ -24,7 +24,7 @@ router = APIRouter(prefix="/organizations/{org_id}/services", tags=["services"])
     summary="List service types",
 )
 async def list_services(
-    org: Annotated[Organization, Depends(get_organization_dependency)],
+    org: Annotated[Organization, Depends(require_org_access)],
     db: Annotated[AsyncSession, Depends(get_db)],
     active_only: Annotated[bool, Query(description="Only return active services")] = True,
 ) -> list[ServiceType]:
@@ -41,7 +41,7 @@ async def list_services(
 )
 async def create_service(
     service_data: ServiceTypeCreate,
-    org: Annotated[Organization, Depends(get_organization_dependency)],
+    org: Annotated[Organization, Depends(require_org_access)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> ServiceType:
     """Create a new service type."""
@@ -57,7 +57,7 @@ async def create_service(
 )
 async def get_service(
     service_id: UUID,
-    org: Annotated[Organization, Depends(get_organization_dependency)],
+    org: Annotated[Organization, Depends(require_org_access)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> ServiceType:
     """Get service type details."""
@@ -78,7 +78,7 @@ async def get_service(
 async def update_service(
     service_id: UUID,
     service_data: ServiceTypeUpdate,
-    org: Annotated[Organization, Depends(get_organization_dependency)],
+    org: Annotated[Organization, Depends(require_org_access)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> ServiceType:
     """Update a service type."""
@@ -101,7 +101,7 @@ async def update_service(
 )
 async def delete_service(
     service_id: UUID,
-    org: Annotated[Organization, Depends(get_organization_dependency)],
+    org: Annotated[Organization, Depends(require_org_access)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> None:
     """Delete a service type (soft delete)."""

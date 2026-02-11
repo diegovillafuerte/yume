@@ -6,7 +6,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import PaginationParams, get_db, get_organization_dependency
+from app.api.deps import PaginationParams, get_db, require_org_access
 from app.models import EndCustomer, Organization
 from app.schemas.customer import CustomerCreate, CustomerResponse, CustomerUpdate
 from app.services import customer as customer_service
@@ -20,7 +20,7 @@ router = APIRouter(prefix="/organizations/{org_id}/customers", tags=["customers"
     summary="List customers",
 )
 async def list_customers(
-    org: Annotated[Organization, Depends(get_organization_dependency)],
+    org: Annotated[Organization, Depends(require_org_access)],
     db: Annotated[AsyncSession, Depends(get_db)],
     pagination: Annotated[PaginationParams, Depends()],
 ) -> list[EndCustomer]:
@@ -39,7 +39,7 @@ async def list_customers(
 )
 async def create_customer(
     customer_data: CustomerCreate,
-    org: Annotated[Organization, Depends(get_organization_dependency)],
+    org: Annotated[Organization, Depends(require_org_access)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> EndCustomer:
     """Create a new customer (incremental identity - only phone required)."""
@@ -65,7 +65,7 @@ async def create_customer(
 )
 async def get_customer(
     customer_id: UUID,
-    org: Annotated[Organization, Depends(get_organization_dependency)],
+    org: Annotated[Organization, Depends(require_org_access)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> EndCustomer:
     """Get customer details."""
@@ -86,7 +86,7 @@ async def get_customer(
 async def update_customer(
     customer_id: UUID,
     customer_data: CustomerUpdate,
-    org: Annotated[Organization, Depends(get_organization_dependency)],
+    org: Annotated[Organization, Depends(require_org_access)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> EndCustomer:
     """Update a customer (incremental identity - enrich data over time)."""

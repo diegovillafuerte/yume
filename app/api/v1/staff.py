@@ -6,7 +6,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_db, get_organization_dependency
+from app.api.deps import get_db, require_org_access
 from app.models import Organization, ParloUser
 from app.schemas.staff import StaffCreate, StaffResponse, StaffServiceAssignment, StaffUpdate
 from app.services import staff as staff_service
@@ -20,7 +20,7 @@ router = APIRouter(prefix="/organizations/{org_id}/staff", tags=["staff"])
     summary="List staff members",
 )
 async def list_staff(
-    org: Annotated[Organization, Depends(get_organization_dependency)],
+    org: Annotated[Organization, Depends(require_org_access)],
     db: Annotated[AsyncSession, Depends(get_db)],
     location_id: Annotated[
         UUID | None, Query(description="Filter by location ID")
@@ -39,7 +39,7 @@ async def list_staff(
 )
 async def create_staff(
     staff_data: StaffCreate,
-    org: Annotated[Organization, Depends(get_organization_dependency)],
+    org: Annotated[Organization, Depends(require_org_access)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> ParloUser:
     """Create a new staff member.
@@ -67,7 +67,7 @@ async def create_staff(
 )
 async def lookup_staff_by_phone(
     phone_number: Annotated[str, Query(description="Phone number to lookup")],
-    org: Annotated[Organization, Depends(get_organization_dependency)],
+    org: Annotated[Organization, Depends(require_org_access)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> ParloUser | None:
     """Lookup staff member by phone number (for message routing).
@@ -86,7 +86,7 @@ async def lookup_staff_by_phone(
 )
 async def get_staff(
     staff_id: UUID,
-    org: Annotated[Organization, Depends(get_organization_dependency)],
+    org: Annotated[Organization, Depends(require_org_access)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> ParloUser:
     """Get staff member details."""
@@ -107,7 +107,7 @@ async def get_staff(
 async def update_staff(
     staff_id: UUID,
     staff_data: StaffUpdate,
-    org: Annotated[Organization, Depends(get_organization_dependency)],
+    org: Annotated[Organization, Depends(require_org_access)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> ParloUser:
     """Update a staff member."""
@@ -141,7 +141,7 @@ async def update_staff(
 )
 async def delete_staff(
     staff_id: UUID,
-    org: Annotated[Organization, Depends(get_organization_dependency)],
+    org: Annotated[Organization, Depends(require_org_access)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> None:
     """Delete a staff member (soft delete)."""
@@ -164,7 +164,7 @@ async def delete_staff(
 async def assign_staff_services(
     staff_id: UUID,
     assignment: StaffServiceAssignment,
-    org: Annotated[Organization, Depends(get_organization_dependency)],
+    org: Annotated[Organization, Depends(require_org_access)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> ParloUser:
     """Update which services this staff member can perform."""

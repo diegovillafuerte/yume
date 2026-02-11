@@ -6,7 +6,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_db, get_organization_dependency
+from app.api.deps import get_db, require_org_access
 from app.models import Location, Organization
 from app.schemas.location import (
     LocationCreate,
@@ -24,7 +24,7 @@ router = APIRouter(prefix="/organizations/{org_id}/locations", tags=["locations"
     summary="List locations",
 )
 async def list_locations(
-    org: Annotated[Organization, Depends(get_organization_dependency)],
+    org: Annotated[Organization, Depends(require_org_access)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> list[Location]:
     """List all locations for an organization."""
@@ -40,7 +40,7 @@ async def list_locations(
 )
 async def create_location(
     location_data: LocationCreate,
-    org: Annotated[Organization, Depends(get_organization_dependency)],
+    org: Annotated[Organization, Depends(require_org_access)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> Location:
     """Create a new location."""
@@ -56,7 +56,7 @@ async def create_location(
 )
 async def get_location(
     location_id: UUID,
-    org: Annotated[Organization, Depends(get_organization_dependency)],
+    org: Annotated[Organization, Depends(require_org_access)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> Location:
     """Get location details."""
@@ -77,7 +77,7 @@ async def get_location(
 async def update_location(
     location_id: UUID,
     location_data: LocationUpdate,
-    org: Annotated[Organization, Depends(get_organization_dependency)],
+    org: Annotated[Organization, Depends(require_org_access)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> Location:
     """Update a location."""
@@ -100,7 +100,7 @@ async def update_location(
 )
 async def delete_location(
     location_id: UUID,
-    org: Annotated[Organization, Depends(get_organization_dependency)],
+    org: Annotated[Organization, Depends(require_org_access)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> None:
     """Delete a location.
