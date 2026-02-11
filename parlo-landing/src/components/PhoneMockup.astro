@@ -1,0 +1,52 @@
+---
+import ChatMessage from './ChatMessage.astro';
+import type { ChatMessage as ChatMessageType } from '../data/slides';
+
+interface Props {
+  statusTime: string;
+  headerName: string;
+  headerSubtitle: string;
+  avatarEmoji: string;
+  avatarStyle: 'parlo' | 'business';
+  messages: ChatMessageType[];
+}
+
+const { statusTime, headerName, headerSubtitle, avatarEmoji, avatarStyle, messages } = Astro.props;
+
+const avatarBg =
+  avatarStyle === 'parlo'
+    ? 'bg-gradient-to-br from-primary to-secondary'
+    : 'bg-gradient-to-br from-amber-400 to-red-600';
+---
+
+<div class="max-w-[380px] mx-auto bg-white rounded-[40px] p-4 px-3 shadow-[0_0_0_8px_#f0f0f0,0_0_0_12px_#e0e0e0,0_20px_60px_rgba(0,0,0,0.12)]">
+  <!-- Status bar -->
+  <div class="flex justify-between px-4 py-2 text-xs font-medium mb-3">
+    <span>{statusTime}</span>
+    <span>📶 🔋</span>
+  </div>
+
+  <!-- Chat header -->
+  <div class="bg-[#075E54] p-4 rounded-t-2xl flex items-center gap-3">
+    <div class:list={['w-11 h-11 rounded-full flex items-center justify-center text-2xl shrink-0', avatarBg]}>
+      {avatarEmoji}
+    </div>
+    <div>
+      <h3 class="text-white text-base font-semibold mb-0.5">{headerName}</h3>
+      <p class="text-white/80 text-xs">{headerSubtitle}</p>
+    </div>
+  </div>
+
+  <!-- Chat body -->
+  <div class="bg-gradient-to-b from-[#ECE5DD] to-[#D9D0C7] p-3.5 rounded-b-2xl h-[420px] overflow-y-auto overflow-x-hidden scrollbar-thin">
+    {messages.map((msg) => (
+      <ChatMessage
+        role={msg.role}
+        text={msg.text}
+        time={msg.time}
+        voiceNote={msg.voiceNote}
+        paymentLink={msg.paymentLink}
+      />
+    ))}
+  </div>
+</div>

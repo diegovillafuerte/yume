@@ -1,0 +1,10 @@
+---
+import BenefitCard from './BenefitCard.astro';
+import { benefits } from '../data/benefits';
+---
+
+<section class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 max-w-[1200px] mx-auto my-12 px-8">
+  {benefits.map((b) => (
+    <BenefitCard icon={b.icon} stat={b.stat} title={b.title} text={b.text} />
+  ))}
+</section>

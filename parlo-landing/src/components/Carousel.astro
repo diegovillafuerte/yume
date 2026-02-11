@@ -1,0 +1,199 @@
+---
+import PhoneMockup from './PhoneMockup.astro';
+import { slides } from '../data/slides';
+
+const totalSlides = slides.length;
+---
+
+<div class="max-w-[600px] mx-auto relative">
+  <!-- Tabs -->
+  <div class="flex gap-1 justify-center items-center mb-8 flex-wrap" role="tablist" aria-label="Pasos de demostración">
+    {slides.map((slide, i) => (
+      <>
+        <button
+          class:list={[
+            'carousel-tab px-4 py-2 border-2 rounded-xl text-[0.8rem] font-semibold font-body cursor-pointer transition-all duration-300 whitespace-nowrap flex items-center gap-2',
+            i === 0
+              ? 'gradient-bg text-white border-transparent'
+              : 'bg-white text-text-light border-border hover:border-primary hover:text-primary',
+          ]}
+          role="tab"
+          aria-selected={i === 0 ? 'true' : 'false'}
+          aria-controls={`slide-${i}`}
+          data-slide-index={i}
+        >
+          <span
+            class:list={[
+              'tab-num inline-flex w-[22px] h-[22px] rounded-full items-center justify-center text-[0.7rem] font-bold shrink-0 transition-all duration-300',
+              i === 0 ? 'bg-white/25 text-white' : 'bg-border text-text-light',
+            ]}
+          >
+            {i + 1}
+          </span>
+          {slide.tabLabel}
+        </button>
+        {i < totalSlides - 1 && (
+          <div class="w-5 h-0.5 bg-border shrink-0 max-md:w-3" />
+        )}
+      </>
+    ))}
+  </div>
+
+  <!-- Viewport -->
+  <div class="overflow-x-auto overflow-y-hidden snap-x snap-mandatory scrollbar-hide rounded-xl" id="carouselViewport">
+    <div class="flex" id="carouselTrack">
+      {slides.map((slide, i) => (
+        <div
+          class="min-w-full flex-shrink-0 snap-start"
+          role="tabpanel"
+          id={`slide-${i}`}
+          aria-label={`Paso ${slide.stepNumber}: ${slide.slideTitle}`}
+        >
+          <div class="text-center mb-5">
+            <span class="inline-flex w-9 h-9 rounded-full gradient-bg text-white items-center justify-center font-heading text-lg font-bold mr-3 align-middle">
+              {slide.stepNumber}
+            </span>
+            <span class="font-heading text-xl font-bold text-text align-middle">
+              {slide.slideTitle}
+            </span>
+          </div>
+          <PhoneMockup
+            statusTime={slide.messages[0]?.time || '9:41'}
+            headerName={slide.chatHeader.name}
+            headerSubtitle={slide.chatHeader.subtitle}
+            avatarEmoji={slide.chatHeader.avatarEmoji}
+            avatarStyle={slide.chatHeader.avatarStyle}
+            messages={slide.messages}
+          />
+        </div>
+      ))}
+    </div>
+  </div>
+
+  <!-- Arrows & Dots -->
+  <div class="flex justify-center items-center gap-6 mt-8">
+    <button
+      class="carousel-arrow w-12 h-12 rounded-full border-2 border-border bg-white flex items-center justify-center cursor-pointer text-xl transition-all duration-300 text-text hover:border-primary hover:text-primary hover:bg-primary/5 disabled:opacity-30 disabled:cursor-not-allowed"
+      id="prevBtn"
+      disabled
+      aria-label="Diapositiva anterior"
+    >
+      ←
+    </button>
+
+    <div class="flex gap-2 items-center" id="carouselDots">
+      {slides.map((_, i) => (
+        <button
+          class:list={[
+            'carousel-dot h-2.5 rounded-full border-none cursor-pointer transition-all duration-300',
+            i === 0 ? 'bg-primary w-7' : 'bg-border w-2.5',
+          ]}
+          data-dot-index={i}
+          aria-label={`Ir a diapositiva ${i + 1}`}
+        />
+      ))}
+    </div>
+
+    <button
+      class="carousel-arrow w-12 h-12 rounded-full border-2 border-border bg-white flex items-center justify-center cursor-pointer text-xl transition-all duration-300 text-text hover:border-primary hover:text-primary hover:bg-primary/5 disabled:opacity-30 disabled:cursor-not-allowed"
+      id="nextBtn"
+      aria-label="Siguiente diapositiva"
+    >
+      →
+    </button>
+  </div>
+</div>
+
+<script define:vars={{ totalSlides }}>
+  let currentSlide = 0;
+  const viewport = document.getElementById('carouselViewport');
+  const tabs = document.querySelectorAll('.carousel-tab');
+  const dots = document.querySelectorAll('.carousel-dot');
+  const prevBtn = document.getElementById('prevBtn');
+  const nextBtn = document.getElementById('nextBtn');
+
+  function updateIndicators(n) {
+    currentSlide = n;
+
+    // Update dots
+    dots.forEach((d, i) => {
+      if (i === n) {
+        d.classList.add('bg-primary', 'w-7');
+        d.classList.remove('bg-border', 'w-2.5');
+      } else {
+        d.classList.remove('bg-primary', 'w-7');
+        d.classList.add('bg-border', 'w-2.5');
+      }
+    });
+
+    // Update tabs
+    tabs.forEach((t, i) => {
+      const num = t.querySelector('.tab-num');
+      if (i === n) {
+        t.classList.add('gradient-bg', 'text-white', 'border-transparent');
+        t.classList.remove('bg-white', 'text-text-light', 'border-border');
+        t.setAttribute('aria-selected', 'true');
+        if (num) {
+          num.classList.add('bg-white/25', 'text-white');
+          num.classList.remove('bg-border', 'text-text-light');
+        }
+      } else {
+        t.classList.remove('gradient-bg', 'text-white', 'border-transparent');
+        t.classList.add('bg-white', 'text-text-light', 'border-border');
+        t.setAttribute('aria-selected', 'false');
+        if (num) {
+          num.classList.remove('bg-white/25', 'text-white');
+          num.classList.add('bg-border', 'text-text-light');
+        }
+      }
+    });
+
+    // Update arrows
+    prevBtn.disabled = n === 0;
+    nextBtn.disabled = n === totalSlides - 1;
+  }
+
+  function goToSlide(n) {
+    viewport.scrollTo({ left: n * viewport.offsetWidth, behavior: 'smooth' });
+  }
+
+  // Tab clicks
+  tabs.forEach((tab) => {
+    tab.addEventListener('click', () => {
+      const index = parseInt(tab.dataset.slideIndex, 10);
+      goToSlide(index);
+    });
+  });
+
+  // Dot clicks
+  dots.forEach((dot) => {
+    dot.addEventListener('click', () => {
+      const index = parseInt(dot.dataset.dotIndex, 10);
+      goToSlide(index);
+    });
+  });
+
+  // Arrow clicks
+  prevBtn.addEventListener('click', () => {
+    if (currentSlide > 0) goToSlide(currentSlide - 1);
+  });
+  nextBtn.addEventListener('click', () => {
+    if (currentSlide < totalSlides - 1) goToSlide(currentSlide + 1);
+  });
+
+  // Sync on scroll
+  let scrollTimeout;
+  viewport.addEventListener('scroll', () => {
+    clearTimeout(scrollTimeout);
+    scrollTimeout = setTimeout(() => {
+      const index = Math.round(viewport.scrollLeft / viewport.offsetWidth);
+      if (index !== currentSlide) updateIndicators(index);
+    }, 50);
+  });
+
+  // Keyboard nav
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowRight' && currentSlide < totalSlides - 1) goToSlide(currentSlide + 1);
+    if (e.key === 'ArrowLeft' && currentSlide > 0) goToSlide(currentSlide - 1);
+  });
+</script>

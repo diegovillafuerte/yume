@@ -1,0 +1,48 @@
+---
+interface Props {
+  role: 'bot' | 'client' | 'owner';
+  text: string;
+  time?: string;
+  voiceNote?: { duration: string; transcript: string };
+  paymentLink?: { label: string; amount: string };
+}
+
+const { role, text, time, voiceNote, paymentLink } = Astro.props;
+
+const isRight = role === 'client' || role === 'owner';
+const bubbleClass = isRight
+  ? 'bg-[#D9FDD3] self-end rounded-xl rounded-br-sm'
+  : 'bg-white self-start rounded-xl rounded-bl-sm';
+---
+
+<div class="mb-1.5 flex flex-col">
+  {voiceNote ? (
+    <>
+      <div class:list={['px-3 py-2 max-w-[85%] text-xs leading-snug shadow-sm', bubbleClass]}>
+        <div class="flex items-center gap-2 py-1 px-3">
+          <div class="w-6 h-6 rounded-full bg-primary/15 flex items-center justify-center text-xs shrink-0">🎤</div>
+          <div class="flex-1 h-[18px] bg-gradient-to-r from-primary/30 via-primary/50 to-primary/30 rounded-full" />
+          <span class="text-[0.65rem] text-black/50 font-medium">{voiceNote.duration}</span>
+        </div>
+        <div class="mt-1 pt-1 border-t border-black/10 text-[0.7rem] italic text-black/70">
+          {voiceNote.transcript}
+        </div>
+      </div>
+      {time && <div class="text-[0.6rem] text-black/45 mt-0.5 text-right">{time}</div>}
+    </>
+  ) : paymentLink ? (
+    <>
+      <div class:list={['px-3 py-2 max-w-[85%] text-xs leading-snug shadow-sm', bubbleClass]}>
+        <span class="block bg-gradient-to-br from-emerald-500 to-emerald-600 text-white py-3.5 px-5 rounded-xl text-center font-bold text-sm">
+          {paymentLink.label}
+        </span>
+      </div>
+      {time && <div class="text-[0.6rem] text-black/45 mt-0.5 text-right">{time}</div>}
+    </>
+  ) : (
+    <>
+      <div class:list={['px-3 py-2 max-w-[85%] text-xs leading-snug shadow-sm', bubbleClass]} set:html={text} />
+      {time && <div class="text-[0.6rem] text-black/45 mt-0.5 text-right">{time}</div>}
+    </>
+  )}
+</div>

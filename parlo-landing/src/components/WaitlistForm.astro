@@ -1,0 +1,114 @@
+---
+---
+
+<section id="form-section" class="py-20 px-8 gradient-bg text-center text-white">
+  <div class="max-w-[800px] mx-auto">
+    <h2 class="font-heading text-[clamp(2rem,4vw,3rem)] font-extrabold mb-4">
+      Únete a la lista de espera exclusiva
+    </h2>
+    <p class="text-lg mb-10 opacity-95">
+      Acceso anticipado para un número limitado de estéticas y barberías
+    </p>
+
+    <div class="bg-white rounded-3xl p-12 max-w-[550px] mx-auto shadow-[0_20px_60px_rgba(0,0,0,0.15)]">
+      <form id="waitlistForm">
+        <div class="mb-6 text-left">
+          <label for="name" class="block mb-2 font-semibold text-text text-sm">Tu nombre</label>
+          <input
+            type="text"
+            id="name"
+            name="name"
+            placeholder="María González"
+            required
+            class="w-full p-4 bg-bg border-2 border-border rounded-xl text-base font-body text-text transition-all duration-300 focus:outline-none focus:border-primary focus:bg-white"
+          />
+        </div>
+
+        <div class="mb-6 text-left">
+          <label for="business" class="block mb-2 font-semibold text-text text-sm">Nombre de tu negocio</label>
+          <input
+            type="text"
+            id="business"
+            name="business"
+            placeholder="Estética Glamour"
+            required
+            class="w-full p-4 bg-bg border-2 border-border rounded-xl text-base font-body text-text transition-all duration-300 focus:outline-none focus:border-primary focus:bg-white"
+          />
+        </div>
+
+        <div class="mb-6 text-left">
+          <label for="activity" class="block mb-2 font-semibold text-text text-sm">¿A qué se dedica tu negocio?</label>
+          <input
+            type="text"
+            id="activity"
+            name="activity"
+            placeholder="Barbería, estética, spa, uñas..."
+            required
+            class="w-full p-4 bg-bg border-2 border-border rounded-xl text-base font-body text-text transition-all duration-300 focus:outline-none focus:border-primary focus:bg-white"
+          />
+        </div>
+
+        <div class="mb-6 text-left">
+          <label for="phone" class="block mb-2 font-semibold text-text text-sm">WhatsApp</label>
+          <input
+            type="tel"
+            id="phone"
+            name="phone"
+            placeholder="33 1234 5678"
+            required
+            class="w-full p-4 bg-bg border-2 border-border rounded-xl text-base font-body text-text transition-all duration-300 focus:outline-none focus:border-primary focus:bg-white"
+          />
+        </div>
+
+        <button
+          type="submit"
+          class="w-full py-5 gradient-bg text-white border-none rounded-xl text-lg font-bold font-heading cursor-pointer transition-all duration-300 uppercase tracking-wide hover:-translate-y-0.5 hover:shadow-[0_12px_30px_rgba(124,58,237,0.4)]"
+        >
+          Unirme a la lista exclusiva
+        </button>
+      </form>
+
+      <div
+        id="successMessage"
+        class="hidden mt-6 p-5 bg-emerald-100 border-2 border-emerald-500 rounded-xl text-emerald-900 font-semibold text-center"
+      >
+        ✅ ¡Perfecto! Te contactamos por WhatsApp pronto para configurar tu Parlo.
+      </div>
+    </div>
+  </div>
+</section>
+
+<script>
+  const form = document.getElementById('waitlistForm') as HTMLFormElement;
+  const successMessage = document.getElementById('successMessage')!;
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    const formData = {
+      nombre: (document.getElementById('name') as HTMLInputElement).value,
+      negocio: (document.getElementById('business') as HTMLInputElement).value,
+      actividad: (document.getElementById('activity') as HTMLInputElement).value,
+      whatsapp: (document.getElementById('phone') as HTMLInputElement).value,
+      fecha: new Date().toLocaleString('es-MX'),
+      fuente: 'landing-parlo',
+    };
+
+    try {
+      await fetch('https://script.google.com/a/macros/parlo.mx/s/AKfycbwo8FSyWJj3WDQ2UsuQn6bO6-VUdT6fKh6QS7bKaYAGxlcRBunajMWL0gRf288yq0OB9A/exec', {
+        method: 'POST',
+        body: JSON.stringify(formData),
+      });
+    } catch (err) {
+      console.error('Form submission error:', err);
+    }
+
+    successMessage.classList.remove('hidden');
+    successMessage.classList.add('animate-fade-in');
+    form.reset();
+
+    setTimeout(() => {
+      successMessage.classList.add('hidden');
+    }, 8000);
+  });
+</script>

@@ -1,0 +1,21 @@
+---
+interface Props {
+  icon: string;
+  stat?: string;
+  title: string;
+  text: string;
+}
+
+const { icon, stat, title, text } = Astro.props;
+---
+
+<div class="reveal bg-white border-2 border-border rounded-[20px] p-8 transition-all duration-300 hover:border-primary hover:-translate-y-1.5 hover:shadow-[0_12px_40px_rgba(124,58,237,0.15)]">
+  <div class="flex items-center gap-3 mb-4">
+    <span class="text-[2.5rem]">{icon}</span>
+    {stat && (
+      <span class="font-heading text-[1.75rem] font-extrabold gradient-text">{stat}</span>
+    )}
+  </div>
+  <h3 class="font-heading text-lg font-bold mb-3">{title}</h3>
+  <p class="text-text-light text-sm leading-relaxed">{text}</p>
+</div>
