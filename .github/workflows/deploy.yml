@@ -2,9 +2,9 @@ name: Test and Deploy
 
 on:
   push:
-    branches: [main]
+    branches: [main, staging]
   pull_request:
-    branches: [main]
+    branches: [main, staging]
 
 jobs:
   test-backend:
@@ -77,17 +77,30 @@ jobs:
         env:
           NEXT_PUBLIC_API_URL: https://api.example.com/api/v1
 
-  deploy:
+  deploy-staging:
     needs: [test-backend, test-frontend]
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/staging' && github.event_name == 'push'
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Deploy notification
+      - name: Deploy staging notification
+        run: |
+          echo "Render auto-deploys on git push to staging"
+          echo "Backend: https://parlo-staging-backend.onrender.com"
+          echo "Frontend: https://parlo-staging-frontend.onrender.com"
+
+  deploy-production:
+    needs: [test-backend, test-frontend]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy production notification
         run: |
           echo "Render auto-deploys on git push to main"
           echo "Backend: https://parlo-backend.onrender.com"
           echo "Frontend: https://parlo-frontend.onrender.com"
-          echo "Configure deploy hooks in Render dashboard for manual triggers"

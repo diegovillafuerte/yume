@@ -71,6 +71,11 @@ class Settings(BaseSettings):
         """Check if running in development."""
         return self.app_env == "development"
 
+    @property
+    def is_staging(self) -> bool:
+        """Check if running in staging."""
+        return self.app_env == "staging"
+
 
 @lru_cache
 def get_settings() -> Settings:

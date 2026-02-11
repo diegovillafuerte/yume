@@ -12,8 +12,8 @@ export const api = axios.create({
 // Add auth token to requests
 api.interceptors.request.use((config) => {
   if (typeof window !== 'undefined') {
-    // Check if this is an admin API call
-    const isAdminCall = config.url?.startsWith('/admin');
+    // Check if this is an admin API call (admin routes + simulate routes use admin auth)
+    const isAdminCall = config.url?.startsWith('/admin') || config.url?.startsWith('/simulate');
     const tokenKey = isAdminCall ? 'admin_token' : 'auth_token';
     const token = localStorage.getItem(tokenKey);
     if (token) {
@@ -29,7 +29,7 @@ api.interceptors.response.use(
   (error) => {
     if (error.response?.status === 401) {
       if (typeof window !== 'undefined') {
-        const isAdminRequest = error.config?.url?.startsWith('/admin');
+        const isAdminRequest = error.config?.url?.startsWith('/admin') || error.config?.url?.startsWith('/simulate');
 
         if (isAdminRequest) {
           localStorage.removeItem('admin_token');

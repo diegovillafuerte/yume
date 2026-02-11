@@ -12,6 +12,26 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from app.config import get_settings
 
 settings = get_settings()
+
+
+def pytest_addoption(parser):
+    """Add custom CLI options."""
+    parser.addoption(
+        "--run-evals",
+        action="store_true",
+        default=False,
+        help="Run eval tests (requires real OPENAI_API_KEY)",
+    )
+
+
+def pytest_collection_modifyitems(config, items):
+    """Skip eval tests unless --run-evals is passed."""
+    if config.getoption("--run-evals"):
+        return
+    skip_eval = pytest.mark.skip(reason="need --run-evals option to run")
+    for item in items:
+        if "eval" in item.keywords:
+            item.add_marker(skip_eval)
 from app.models import (
     Appointment,
     AppointmentSource,

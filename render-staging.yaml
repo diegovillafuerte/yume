@@ -1,0 +1,60 @@
+# Render Infrastructure as Code — STAGING
+# Deploy via Dashboard -> New -> Blueprint -> select this file
+
+databases:
+  - name: parlo-staging-db
+    region: oregon
+    plan: free
+    databaseName: parlo_staging
+    user: parlo
+
+services:
+  # FastAPI Backend (staging)
+  - type: web
+    name: parlo-staging-backend
+    runtime: docker
+    region: oregon
+    plan: free
+    branch: staging
+    healthCheckPath: /health
+    envVars:
+      - key: APP_ENV
+        value: staging
+      - key: DATABASE_URL
+        fromDatabase:
+          name: parlo-staging-db
+          property: connectionString
+      - key: REDIS_URL
+        value: ""
+      - key: OPENAI_API_KEY
+        sync: false  # Must set manually in dashboard
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: ADMIN_MASTER_PASSWORD
+        sync: false  # Must set manually in dashboard
+      - key: FRONTEND_URL
+        value: https://parlo-staging-frontend.onrender.com
+      - key: TWILIO_ACCOUNT_SID
+        sync: false  # Staging Twilio subaccount
+      - key: TWILIO_AUTH_TOKEN
+        sync: false  # Staging Twilio subaccount
+      - key: TWILIO_WHATSAPP_NUMBER
+        sync: false  # Staging WhatsApp number
+      - key: TWILIO_WABA_ID
+        sync: false
+      - key: TWILIO_SENDERS_WEBHOOK_URL
+        value: https://parlo-staging-backend.onrender.com/api/v1/webhooks/twilio/sender-status
+
+  # Next.js Frontend (staging)
+  - type: web
+    name: parlo-staging-frontend
+    runtime: node
+    region: oregon
+    plan: free
+    branch: staging
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    startCommand: npm run start
+    envVars:
+      - key: NEXT_PUBLIC_API_URL
+        value: https://parlo-staging-backend.onrender.com/api/v1

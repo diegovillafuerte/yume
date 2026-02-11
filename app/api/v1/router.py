@@ -15,6 +15,7 @@ from app.api.v1 import (
     staff,
     webhooks,
 )
+from app.config import get_settings
 
 router = APIRouter()
 
@@ -30,6 +31,12 @@ router.include_router(customers.router)
 router.include_router(appointments.router)
 router.include_router(availability.router)
 router.include_router(webhooks.router)
+
+# Simulation endpoints - only available in non-production environments
+if not get_settings().is_production:
+    from app.api.v1 import simulate
+
+    router.include_router(simulate.router)
 
 
 @router.get("/health")

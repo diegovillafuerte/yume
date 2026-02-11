@@ -97,3 +97,6 @@ ignore_missing_imports = true
 testpaths = ["tests"]
 asyncio_mode = "auto"
 pythonpath = ["."]
+markers = [
+    "eval: mark test as eval (requires --run-evals and real OPENAI_API_KEY)",
+]

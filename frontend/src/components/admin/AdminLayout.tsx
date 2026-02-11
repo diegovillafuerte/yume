@@ -10,6 +10,7 @@ const tabs = [
   { name: 'Pending Numbers', href: '/admin/pending-numbers' },
   { name: 'Conversations', href: '/admin/conversations' },
   { name: 'Logs', href: '/admin/logs' },
+  { name: 'Simulate', href: '/admin/simulate' },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
