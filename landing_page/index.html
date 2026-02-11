@@ -3,7 +3,6 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="facebook-domain-verification" content="m3jixnp9mi9og6f1yauhu8b0j182kp" />
     <title>Yume - Tu Asistente Inteligente para Estéticas y Barberías</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -21,16 +20,16 @@
             --text-light: #6B7280;
             --border: #E5E7EB;
         }
-
+        
         * { margin: 0; padding: 0; box-sizing: border-box; }
-
+        
         body {
             font-family: 'Plus Jakarta Sans', sans-serif;
             background: var(--bg);
             color: var(--text);
             line-height: 1.6;
         }
-
+        
         .nav {
             background: rgba(255,255,255,0.9);
             border-bottom: 1px solid var(--border);
@@ -40,7 +39,7 @@
             z-index: 100;
             backdrop-filter: blur(10px);
         }
-
+        
         .nav-container {
             max-width: 1200px;
             margin: 0 auto;
@@ -48,7 +47,7 @@
             justify-content: space-between;
             align-items: center;
         }
-
+        
         .logo {
             font-family: 'Outfit', sans-serif;
             font-size: 1.75rem;
@@ -61,7 +60,7 @@
             align-items: center;
             gap: 0.5rem;
         }
-
+        
         .nav-cta {
             padding: 0.75rem 1.5rem;
             background: var(--primary);
@@ -72,18 +71,18 @@
             cursor: pointer;
             transition: all 0.3s ease;
         }
-
+        
         .nav-cta:hover { background: var(--primary-dark); transform: translateY(-2px); }
-
+        
         /* Hero */
         .hero {
             padding: 5rem 2rem 3rem;
             text-align: center;
             background: linear-gradient(180deg, rgba(124,58,237,0.04) 0%, rgba(255,255,255,0) 100%);
         }
-
+        
         .hero-container { max-width: 1200px; margin: 0 auto; }
-
+        
         .badge {
             display: inline-flex;
             align-items: center;
@@ -98,7 +97,7 @@
             margin-bottom: 1.5rem;
             animation: fadeIn 0.6s ease-out;
         }
-
+        
         h1 {
             font-family: 'Outfit', sans-serif;
             font-size: clamp(2.5rem, 6vw, 4.5rem);
@@ -107,14 +106,14 @@
             margin-bottom: 1.5rem;
             animation: fadeIn 0.8s ease-out 0.2s backwards;
         }
-
+        
         .gradient-text {
             background: linear-gradient(135deg, var(--primary), var(--secondary));
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             background-clip: text;
         }
-
+        
         .subtitle {
             font-size: clamp(1.1rem, 2.5vw, 1.35rem);
             color: var(--text-light);
@@ -122,7 +121,7 @@
             margin: 0 auto 1.5rem;
             animation: fadeIn 1s ease-out 0.4s backwards;
         }
-
+        
         .free-badge {
             font-size: 1.125rem;
             color: var(--primary);
@@ -130,11 +129,11 @@
             margin-bottom: 2rem;
             animation: fadeIn 1.2s ease-out 0.6s backwards;
         }
-
+        
         .free-badge strong { color: var(--secondary); }
-
+        
         .hero-cta { display: flex; justify-content: center; margin: 0 auto 1rem; animation: fadeIn 1.4s ease-out 0.8s backwards; }
-
+        
         .hero-cta-btn {
             padding: 1.25rem 2.5rem;
             background: linear-gradient(135deg, var(--primary), var(--secondary));
@@ -148,9 +147,9 @@
             transition: all 0.3s ease;
             box-shadow: 0 8px 25px rgba(124,58,237,0.3);
         }
-
+        
         .hero-cta-btn:hover { transform: translateY(-3px); box-shadow: 0 12px 35px rgba(124,58,237,0.4); }
-
+        
         /* Benefits */
         .benefits {
             display: grid;
@@ -160,7 +159,7 @@
             margin: 3rem auto;
             padding: 0 2rem;
         }
-
+        
         .benefit-card {
             background: var(--bg-light);
             border: 2px solid var(--border);
@@ -168,12 +167,12 @@
             padding: 2rem;
             transition: all 0.3s ease;
         }
-
+        
         .benefit-card:hover { border-color: var(--primary); transform: translateY(-6px); box-shadow: 0 12px 40px rgba(124,58,237,0.15); }
-
+        
         .benefit-header { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem; }
         .benefit-icon { font-size: 2.5rem; }
-
+        
         .benefit-stat {
             font-family: 'Outfit', sans-serif;
             font-size: 1.75rem;
@@ -183,17 +182,17 @@
             -webkit-text-fill-color: transparent;
             background-clip: text;
         }
-
+        
         .benefit-title { font-family: 'Outfit', sans-serif; font-size: 1.125rem; font-weight: 700; margin-bottom: 0.75rem; }
         .benefit-text { color: var(--text-light); font-size: 0.9rem; line-height: 1.6; }
-
+        
         /* How it Works - Carousel */
         .how-it-works {
             padding: 5rem 2rem;
             background: var(--bg-light);
             overflow: hidden;
         }
-
+        
         .section-title {
             font-family: 'Outfit', sans-serif;
             font-size: clamp(2rem, 4vw, 3rem);
@@ -201,7 +200,7 @@
             text-align: center;
             margin-bottom: 1rem;
         }
-
+        
         .section-subtitle {
             text-align: center;
             color: var(--text-light);
@@ -211,14 +210,14 @@
             margin-left: auto;
             margin-right: auto;
         }
-
+        
         /* Carousel */
         .carousel-wrapper {
             max-width: 600px;
             margin: 0 auto;
             position: relative;
         }
-
+        
         .carousel-tabs {
             display: flex;
             gap: 0.25rem;
@@ -227,7 +226,7 @@
             margin-bottom: 2rem;
             flex-wrap: wrap;
         }
-
+        
         .carousel-tab {
             padding: 0.5rem 1rem;
             border: 2px solid var(--border);
@@ -244,7 +243,7 @@
             align-items: center;
             gap: 0.5rem;
         }
-
+        
         .carousel-tab .tab-num {
             display: inline-flex;
             width: 22px;
@@ -259,28 +258,28 @@
             flex-shrink: 0;
             transition: all 0.3s ease;
         }
-
+        
         .carousel-tab:hover { border-color: var(--primary); color: var(--primary); }
         .carousel-tab:hover .tab-num { background: rgba(124,58,237,0.15); color: var(--primary); }
-
+        
         .carousel-tab.active {
             background: linear-gradient(135deg, var(--primary), var(--secondary));
             color: white;
             border-color: transparent;
         }
-
+        
         .carousel-tab.active .tab-num {
             background: rgba(255,255,255,0.25);
             color: white;
         }
-
+        
         .tab-connector {
             width: 20px;
             height: 2px;
             background: var(--border);
             flex-shrink: 0;
         }
-
+        
         .carousel-viewport {
             position: relative;
             overflow-x: auto;
@@ -290,19 +289,19 @@
             border-radius: 12px;
             scrollbar-width: none;
         }
-
+        
         .carousel-viewport::-webkit-scrollbar { display: none; }
-
+        
         .carousel-track {
             display: flex;
         }
-
+        
         .carousel-slide {
             min-width: 100%;
             flex-shrink: 0;
             scroll-snap-align: start;
         }
-
+        
         .carousel-arrows {
             display: flex;
             justify-content: center;
@@ -310,7 +309,7 @@
             gap: 1.5rem;
             margin-top: 2rem;
         }
-
+        
         .carousel-arrow {
             width: 48px;
             height: 48px;
@@ -325,16 +324,16 @@
             transition: all 0.3s ease;
             color: var(--text);
         }
-
+        
         .carousel-arrow:hover { border-color: var(--primary); color: var(--primary); background: rgba(124,58,237,0.05); }
         .carousel-arrow:disabled { opacity: 0.3; cursor: not-allowed; }
-
+        
         .carousel-dots {
             display: flex;
             gap: 0.5rem;
             align-items: center;
         }
-
+        
         .carousel-dot {
             width: 10px;
             height: 10px;
@@ -344,18 +343,18 @@
             cursor: pointer;
             transition: all 0.3s ease;
         }
-
+        
         .carousel-dot.active {
             background: var(--primary);
             width: 28px;
             border-radius: 5px;
         }
-
+        
         .slide-label {
             text-align: center;
             margin-bottom: 1.25rem;
         }
-
+        
         .step-number {
             display: inline-flex;
             width: 36px;
@@ -371,7 +370,7 @@
             margin-right: 0.75rem;
             vertical-align: middle;
         }
-
+        
         .slide-title {
             font-family: 'Outfit', sans-serif;
             font-size: 1.25rem;
@@ -379,19 +378,19 @@
             color: var(--text);
             vertical-align: middle;
         }
-
+        
         /* Phone mockup */
         .phone-mockup {
-            max-width: 420px;
+            max-width: 380px;
             margin: 0 auto;
             background: white;
             border-radius: 40px;
-            padding: 1.25rem 0.875rem;
+            padding: 1rem 0.75rem;
             box-shadow: 0 0 0 8px #f0f0f0, 0 0 0 12px #e0e0e0, 0 20px 60px rgba(0,0,0,0.12);
         }
-
+        
         .status-bar { display: flex; justify-content: space-between; padding: 0.5rem 1rem; font-size: 0.75rem; font-weight: 500; margin-bottom: 0.75rem; }
-
+        
         .chat-header {
             background: #075E54;
             padding: 1rem;
@@ -400,7 +399,7 @@
             align-items: center;
             gap: 0.75rem;
         }
-
+        
         .avatar {
             width: 44px;
             height: 44px;
@@ -411,57 +410,99 @@
             font-size: 1.5rem;
             flex-shrink: 0;
         }
-
+        
         .avatar.yume { background: linear-gradient(135deg, var(--primary), var(--secondary)); }
         .avatar.business { background: linear-gradient(135deg, #F59E0B, #DC2626); }
-
+        
         .chat-info h3 { color: white; font-size: 1rem; font-weight: 600; margin-bottom: 0.125rem; }
         .chat-info p { color: rgba(255,255,255,0.8); font-size: 0.75rem; }
-
+        
         .chat-body {
             background: linear-gradient(180deg, #ECE5DD 0%, #D9D0C7 100%);
-            padding: 1.25rem;
+            padding: 0.875rem;
             border-radius: 0 0 16px 16px;
-            min-height: 420px;
+            height: 420px;
+            overflow-y: auto;
+            overflow-x: hidden;
         }
-
-        .message { margin-bottom: 0.75rem; display: flex; flex-direction: column; }
-
+        
+        .chat-body::-webkit-scrollbar {
+            width: 4px;
+        }
+        
+        .chat-body::-webkit-scrollbar-track {
+            background: rgba(0,0,0,0.05);
+            border-radius: 10px;
+        }
+        
+        .chat-body::-webkit-scrollbar-thumb {
+            background: rgba(0,0,0,0.2);
+            border-radius: 10px;
+        }
+        
+        .message { margin-bottom: 0.4rem; display: flex; flex-direction: column; }
+        
         .message-bubble {
-            padding: 0.75rem 1rem;
+            padding: 0.5rem 0.75rem;
             border-radius: 12px;
-            max-width: 80%;
-            font-size: 0.9rem;
-            line-height: 1.5;
+            max-width: 85%;
+            font-size: 0.75rem;
+            line-height: 1.35;
             box-shadow: 0 1px 2px rgba(0,0,0,0.1);
         }
-
-        .voice-note { display: flex; align-items: center; gap: 0.75rem; padding: 0.625rem 1rem; }
-
+        
+        .message-time {
+            font-size: 0.6rem;
+            color: rgba(0,0,0,0.45);
+            margin-top: 0.2rem;
+            text-align: right;
+        }
+        
+        .voice-note { display: flex; align-items: center; gap: 0.5rem; padding: 0.4rem 0.75rem; }
+        
         .voice-icon {
-            width: 32px; height: 32px; border-radius: 50%;
+            width: 24px; height: 24px; border-radius: 50%;
             background: rgba(124,58,237,0.15);
             display: flex; align-items: center; justify-content: center;
-            font-size: 1rem; flex-shrink: 0;
+            font-size: 0.75rem; flex-shrink: 0;
         }
-
+        
         .voice-wave {
-            flex: 1; height: 24px;
+            flex: 1; height: 18px;
             background: linear-gradient(90deg, rgba(124,58,237,0.3) 0%, rgba(124,58,237,0.5) 25%, rgba(124,58,237,0.3) 50%, rgba(124,58,237,0.5) 75%, rgba(124,58,237,0.3) 100%);
-            border-radius: 12px;
+            border-radius: 9px;
         }
-
-        .voice-duration { font-size: 0.75rem; color: rgba(0,0,0,0.5); font-weight: 500; }
-
+        
+        .voice-duration { font-size: 0.65rem; color: rgba(0,0,0,0.5); font-weight: 500; }
+        
         .voice-transcript {
-            margin-top: 0.5rem; padding-top: 0.5rem;
+            margin-top: 0.3rem; padding-top: 0.3rem;
             border-top: 1px solid rgba(0,0,0,0.1);
-            font-size: 0.85rem; font-style: italic; color: rgba(0,0,0,0.7);
+            font-size: 0.7rem; font-style: italic; color: rgba(0,0,0,0.7);
         }
-
+        
         .message.bot .message-bubble { background: white; align-self: flex-start; border-radius: 12px 12px 12px 2px; }
         .message.client .message-bubble, .message.owner .message-bubble { background: #D9FDD3; align-self: flex-end; border-radius: 12px 12px 2px 12px; }
-
+        
+        .payment-link {
+            display: block;
+            background: linear-gradient(135deg, #10B981, #059669);
+            color: white;
+            padding: 0.875rem 1.25rem;
+            border-radius: 12px;
+            text-decoration: none;
+            text-align: center;
+            font-weight: 700;
+            font-size: 0.9rem;
+            margin: 0.75rem 0;
+            transition: all 0.3s ease;
+        }
+        
+        .payment-link:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+        }
+        
         /* CTA Section */
         .cta-section {
             padding: 5rem 2rem;
@@ -469,11 +510,11 @@
             text-align: center;
             color: white;
         }
-
+        
         .cta-container { max-width: 800px; margin: 0 auto; }
         .cta-title { font-family: 'Outfit', sans-serif; font-size: clamp(2rem, 4vw, 3rem); font-weight: 800; margin-bottom: 1rem; }
         .cta-text { font-size: 1.125rem; margin-bottom: 2.5rem; opacity: 0.95; }
-
+        
         .form-container {
             background: white;
             border-radius: 24px;
@@ -482,10 +523,10 @@
             margin: 0 auto;
             box-shadow: 0 20px 60px rgba(0,0,0,0.15);
         }
-
+        
         .form-group { margin-bottom: 1.5rem; text-align: left; }
         label { display: block; margin-bottom: 0.5rem; font-weight: 600; color: var(--text); font-size: 0.9rem; }
-
+        
         input, select {
             width: 100%; padding: 1rem;
             background: var(--bg); border: 2px solid var(--border);
@@ -493,9 +534,9 @@
             font-family: 'Plus Jakarta Sans', sans-serif;
             color: var(--text); transition: all 0.3s ease;
         }
-
+        
         input:focus, select:focus { outline: none; border-color: var(--primary); background: white; }
-
+        
         .submit-btn {
             width: 100%; padding: 1.25rem;
             background: linear-gradient(135deg, var(--primary), var(--secondary));
@@ -505,34 +546,36 @@
             cursor: pointer; transition: all 0.3s ease;
             text-transform: uppercase; letter-spacing: 0.5px;
         }
-
+        
         .submit-btn:hover { transform: translateY(-2px); box-shadow: 0 12px 30px rgba(124,58,237,0.4); }
-
+        
         .success-message {
             display: none; margin-top: 1.5rem; padding: 1.25rem;
             background: #D1FAE5; border: 2px solid #10B981;
             border-radius: 12px; color: #065F46;
             font-weight: 600; text-align: center;
         }
-
+        
         .success-message.show { display: block; animation: fadeIn 0.5s ease; }
-
+        
         footer {
             padding: 2rem; text-align: center;
             color: var(--text-light); font-size: 0.875rem;
             background: var(--bg-light); border-top: 1px solid var(--border);
         }
-
+        
         @keyframes fadeIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
-
+        
         @media (max-width: 1024px) { .benefits { grid-template-columns: repeat(2, 1fr); } }
-
+        
         @media (max-width: 768px) {
             .benefits { grid-template-columns: 1fr; }
             .form-container { padding: 2rem 1.5rem; }
             .hero { padding: 3rem 1.5rem 2rem; }
             .carousel-tab { padding: 0.5rem 0.875rem; font-size: 0.75rem; }
             .tab-connector { width: 12px; }
+            .phone-mockup { max-width: 340px; }
+            .chat-body { height: 380px; padding: 0.75rem; }
         }
     </style>
 </head>
@@ -544,7 +587,7 @@
             <button class="nav-cta" onclick="document.getElementById('form-section').scrollIntoView({behavior:'smooth'})">Únete a la lista</button>
         </div>
     </nav>
-
+    
     <!-- Hero -->
     <section class="hero">
         <div class="hero-container">
@@ -557,12 +600,12 @@
             </div>
         </div>
     </section>
-
+    
     <!-- How it Works - Carousel -->
     <section class="how-it-works">
         <h2 class="section-title">Cómo funciona <span class="gradient-text">Yume</span></h2>
         <p class="section-subtitle">Cinco formas en que Yume transforma tu negocio</p>
-
+        
         <div class="carousel-wrapper">
             <!-- Tabs -->
             <div class="carousel-tabs">
@@ -574,12 +617,14 @@
                 <div class="tab-connector"></div>
                 <button class="carousel-tab" onclick="goToSlide(3)"><span class="tab-num">4</span> Recordatorios</button>
                 <div class="tab-connector"></div>
-                <button class="carousel-tab" onclick="goToSlide(4)"><span class="tab-num">5</span> Promociones</button>
+                <button class="carousel-tab" onclick="goToSlide(4)"><span class="tab-num">5</span> Pagos</button>
+                <div class="tab-connector"></div>
+                <button class="carousel-tab" onclick="goToSlide(5)"><span class="tab-num">6</span> Promociones</button>
             </div>
-
+            
             <div class="carousel-viewport">
                 <div class="carousel-track" id="carouselTrack">
-
+                    
                     <!-- Slide 1: Onboarding -->
                     <div class="carousel-slide">
                         <div class="slide-label">
@@ -593,18 +638,18 @@
                                 <div class="chat-info"><h3>Yume</h3><p>tu asistente</p></div>
                             </div>
                             <div class="chat-body">
-                                <div class="message bot"><div class="message-bubble">¡Hola! 👋 Soy Yume, tu nuevo asistente.<br><br>Voy a ayudarte a gestionar todo. Primero cuéntame sobre tu negocio.</div></div>
-                                <div class="message bot"><div class="message-bubble">¿Cómo se llama tu estética o barbería?</div></div>
-                                <div class="message owner"><div class="message-bubble">Barbería El Clásico</div></div>
-                                <div class="message bot"><div class="message-bubble">Perfecto, Barbería El Clásico ✂️<br><br>¿Dónde está ubicada?</div></div>
-                                <div class="message owner"><div class="message-bubble">Av. Chapultepec 123, Col. Americana</div></div>
-                                <div class="message bot"><div class="message-bubble">Excelente. Ahora cuéntame: ¿Qué servicios ofreces?</div></div>
-                                <div class="message owner"><div class="message-bubble">- Corte caballero $150<br>- Barba $100<br>- Corte + barba $220</div></div>
-                                <div class="message bot"><div class="message-bubble">¡Listo! 🎉<br><br>Ya estoy configurado. Tus clientes ya pueden agendar citas conmigo.</div></div>
+                                <div class="message bot"><div class="message-bubble">¡Hola! 👋 Soy Yume, tu nuevo asistente.<br><br>Voy a ayudarte a gestionar todo. Primero cuéntame sobre tu negocio.</div><div class="message-time">9:41</div></div>
+                                <div class="message bot"><div class="message-bubble">¿Cómo se llama tu estética o barbería?</div><div class="message-time">9:41</div></div>
+                                <div class="message owner"><div class="message-bubble">Barbería El Clásico</div><div class="message-time">9:42</div></div>
+                                <div class="message bot"><div class="message-bubble">Perfecto, Barbería El Clásico ✂️<br><br>¿Dónde está ubicada?</div><div class="message-time">9:42</div></div>
+                                <div class="message owner"><div class="message-bubble">Av. Chapultepec 123, Col. Americana</div><div class="message-time">9:43</div></div>
+                                <div class="message bot"><div class="message-bubble">Excelente. Ahora cuéntame: ¿Qué servicios ofreces?</div><div class="message-time">9:43</div></div>
+                                <div class="message owner"><div class="message-bubble">- Corte caballero $150<br>- Barba $100<br>- Corte + barba $220</div><div class="message-time">9:44</div></div>
+                                <div class="message bot"><div class="message-bubble">¡Listo! 🎉<br><br>Ya estoy configurado. Tus clientes ya pueden agendar citas conmigo.</div><div class="message-time">9:45</div></div>
                             </div>
                         </div>
                     </div>
-
+                    
                     <!-- Slide 2: Client Booking -->
                     <div class="carousel-slide">
                         <div class="slide-label">
@@ -618,16 +663,16 @@
                                 <div class="chat-info"><h3>Barbería El Clásico</h3><p>en línea</p></div>
                             </div>
                             <div class="chat-body">
-                                <div class="message client"><div class="message-bubble">Hola, quiero sacar cita para mañana</div></div>
-                                <div class="message bot"><div class="message-bubble">¡Hola Carlos! 👋<br><br>Perfecto. ¿Qué servicio te interesa?<br><br>• Corte caballero - $150<br>• Barba - $100<br>• Corte + barba - $220</div></div>
-                                <div class="message client"><div class="message-bubble">Corte + barba</div></div>
-                                <div class="message bot"><div class="message-bubble">Excelente elección. Estos son los horarios disponibles para mañana:<br><br>• 11:00 AM<br>• 3:00 PM ⭐<br>• 5:00 PM</div></div>
-                                <div class="message client"><div class="message-bubble">A las 3 está bien</div></div>
-                                <div class="message bot"><div class="message-bubble">✅ ¡Confirmado!<br><br><strong>Mañana sábado</strong><br>🕒 3:00 PM<br>✂️ Corte + barba<br>💰 $220<br><br>Te enviaré un recordatorio 2 horas antes 😊</div></div>
+                                <div class="message client"><div class="message-bubble">Hola, quiero sacar cita para mañana</div><div class="message-time">10:23</div></div>
+                                <div class="message bot"><div class="message-bubble">¡Hola Carlos! 👋<br><br>Perfecto. ¿Qué servicio te interesa?<br><br>• Corte caballero - $150<br>• Barba - $100<br>• Corte + barba - $220</div><div class="message-time">10:23</div></div>
+                                <div class="message client"><div class="message-bubble">Corte + barba</div><div class="message-time">10:24</div></div>
+                                <div class="message bot"><div class="message-bubble">Excelente elección. Estos son los horarios disponibles para mañana:<br><br>• 11:00 AM<br>• 3:00 PM ⭐<br>• 5:00 PM</div><div class="message-time">10:24</div></div>
+                                <div class="message client"><div class="message-bubble">A las 3 está bien</div><div class="message-time">10:25</div></div>
+                                <div class="message bot"><div class="message-bubble">✅ ¡Confirmado!<br><br><strong>Mañana sábado</strong><br>🕒 3:00 PM<br>✂️ Corte + barba<br>💰 $220<br><br>Te enviaré un recordatorio 2 horas antes 😊</div><div class="message-time">10:25</div></div>
                             </div>
                         </div>
                     </div>
-
+                    
                     <!-- Slide 3: Owner Management -->
                     <div class="carousel-slide">
                         <div class="slide-label">
@@ -641,17 +686,17 @@
                                 <div class="chat-info"><h3>Yume</h3><p>tu asistente</p></div>
                             </div>
                             <div class="chat-body">
-                                <div class="message owner"><div class="message-bubble voice-note"><div class="voice-icon">🎤</div><div class="voice-wave"></div><div class="voice-duration">0:03</div></div></div>
+                                <div class="message owner"><div class="message-bubble voice-note"><div class="voice-icon">🎤</div><div class="voice-wave"></div><div class="voice-duration">0:03</div></div><div class="message-time">15:42</div></div>
                                 <div class="message owner"><div class="message-bubble"><div class="voice-transcript">"Yume, cuál es mi agenda de mañana?"</div></div></div>
-                                <div class="message bot"><div class="message-bubble">Agenda del sábado 8 feb:<br><br><strong>11:00 AM</strong> - Juan Pérez<br>Corte caballero ($150)<br><br><strong>3:00 PM</strong> - Carlos Méndez<br>Corte + barba ($220)<br><br><strong>5:00 PM</strong> - Roberto Silva<br>Barba ($100)<br><br>💰 Total: $470</div></div>
-                                <div class="message owner"><div class="message-bubble">Cambia la cita de Carlos de las 3 a las 5</div></div>
-                                <div class="message bot"><div class="message-bubble">Perfecto, hago el cambio:<br><br>Carlos Méndez: 3:00 PM → 5:00 PM<br><br>¿Le aviso del cambio?</div></div>
-                                <div class="message owner"><div class="message-bubble">Sí por favor</div></div>
-                                <div class="message bot"><div class="message-bubble">✅ Listo. Le avisé por WhatsApp del cambio de horario.<br><br>Carlos confirmó que sí puede a las 5 PM 👍</div></div>
+                                <div class="message bot"><div class="message-bubble">Agenda del sábado 8 feb:<br><br><strong>11:00 AM</strong> - Juan Pérez<br>Corte caballero ($150)<br><br><strong>3:00 PM</strong> - Carlos Méndez<br>Corte + barba ($220)<br><br><strong>5:00 PM</strong> - Roberto Silva<br>Barba ($100)<br><br>💰 Total: $470</div><div class="message-time">15:42</div></div>
+                                <div class="message owner"><div class="message-bubble">Cambia la cita de Carlos de las 3 a las 5</div><div class="message-time">15:43</div></div>
+                                <div class="message bot"><div class="message-bubble">Perfecto, hago el cambio:<br><br>Carlos Méndez: 3:00 PM → 5:00 PM<br><br>¿Le aviso del cambio?</div><div class="message-time">15:43</div></div>
+                                <div class="message owner"><div class="message-bubble">Sí por favor</div><div class="message-time">15:44</div></div>
+                                <div class="message bot"><div class="message-bubble">✅ Listo. Le avisé por WhatsApp del cambio de horario.<br><br>Carlos confirmó que sí puede a las 5 PM 👍</div><div class="message-time">15:45</div></div>
                             </div>
                         </div>
                     </div>
-
+                    
                     <!-- Slide 4: Reminders -->
                     <div class="carousel-slide">
                         <div class="slide-label">
@@ -665,16 +710,39 @@
                                 <div class="chat-info"><h3>Barbería El Clásico</h3><p>en línea</p></div>
                             </div>
                             <div class="chat-body">
-                                <div class="message bot"><div class="message-bubble">Hola Roberto! 👋<br><br>Te recuerdo que hoy tienes tu cita a las 2:00 PM para barba.<br><br>¿Nos vemos en unas horas?</div></div>
-                                <div class="message client"><div class="message-bubble">Uy se me complicó hoy, puedo mañana?</div></div>
-                                <div class="message bot"><div class="message-bubble">Sin problema! Horarios disponibles para mañana:<br><br>• 10:00 AM<br>• 2:00 PM<br>• 4:00 PM</div></div>
-                                <div class="message client"><div class="message-bubble">A las 4 está perfecto</div></div>
-                                <div class="message bot"><div class="message-bubble">✅ ¡Listo! Reagendé tu cita:<br><br><strong>Mañana domingo</strong><br>🕒 4:00 PM<br>💈 Barba<br><br>Nos vemos mañana! 😊</div></div>
+                                <div class="message bot"><div class="message-bubble">Hola Roberto! 👋<br><br>Te recuerdo que hoy tienes tu cita a las 2:00 PM para barba.<br><br>¿Nos vemos en unas horas?</div><div class="message-time">11:30</div></div>
+                                <div class="message client"><div class="message-bubble">Uy se me complicó hoy, puedo mañana?</div><div class="message-time">11:35</div></div>
+                                <div class="message bot"><div class="message-bubble">Sin problema! Horarios disponibles para mañana:<br><br>• 10:00 AM<br>• 2:00 PM<br>• 4:00 PM</div><div class="message-time">11:35</div></div>
+                                <div class="message client"><div class="message-bubble">A las 4 está perfecto</div><div class="message-time">11:36</div></div>
+                                <div class="message bot"><div class="message-bubble">✅ ¡Listo! Reagendé tu cita:<br><br><strong>Mañana domingo</strong><br>🕒 4:00 PM<br>💈 Barba<br><br>Nos vemos mañana! 😊</div><div class="message-time">11:36</div></div>
                             </div>
                         </div>
                     </div>
-
+                    
                     <!-- Slide 5: Promotions -->
+                    <div class="carousel-slide">
+                        <div class="slide-label">
+                            <span class="step-number">5</span>
+                            <span class="slide-title">Cobra por adelantado</span>
+                        </div>
+                        <div class="phone-mockup">
+                            <div class="status-bar"><span>16:45</span><span>📶 🔋</span></div>
+                            <div class="chat-header">
+                                <div class="avatar business">💅</div>
+                                <div class="chat-info"><h3>Estética Lourdes</h3><p>en línea</p></div>
+                            </div>
+                            <div class="chat-body">
+                                <div class="message client"><div class="message-bubble">Hola! Me gustaría agendar para el viernes</div><div class="message-time">16:45</div></div>
+                                <div class="message bot"><div class="message-bubble">¡Hola Ana! 💅<br><br>Claro que sí. Tengo estos horarios:<br><br>• 11:00 AM<br>• 2:00 PM<br>• 4:00 PM</div><div class="message-time">16:45</div></div>
+                                <div class="message client"><div class="message-bubble">A las 2 por favor</div><div class="message-time">16:46</div></div>
+                                <div class="message bot"><div class="message-bubble">Perfecto! ✨<br><br>Para confirmar tu cita, realiza el pago por WhatsApp:<br><br><strong>Viernes 2:00 PM</strong><br>💅 Manicure + Pedicure<br>💰 $350 MXN<br><br><em>*Reembolso completo si cancelas con 2+ horas de anticipación</em></div><div class="message-time">16:46</div></div>
+                                <div class="message bot"><div class="message-bubble"><a href="#" class="payment-link">💳 Pagar $350 MXN</a></div><div class="message-time">16:47</div></div>
+                                <div class="message bot"><div class="message-bubble">✅ ¡Pago detectado!<br><br>Tu cita está confirmada Ana 🎉<br><br><strong>Viernes 2:00 PM</strong><br>💅 Manicure + Pedicure<br>💰 Pagado: $350<br><br>Te veo el viernes! 😊</div><div class="message-time">16:47</div></div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Slide 6: Promotions -->
                     <div class="carousel-slide">
                         <div class="slide-label">
                             <span class="step-number">5</span>
@@ -696,10 +764,10 @@
                             </div>
                         </div>
                     </div>
-
+                    
                 </div>
             </div>
-
+            
             <!-- Arrows & Dots -->
             <div class="carousel-arrows">
                 <button class="carousel-arrow" id="prevBtn" onclick="prevSlide()">←</button>
@@ -707,13 +775,13 @@
                 <button class="carousel-arrow" id="nextBtn" onclick="nextSlide()">→</button>
             </div>
         </div>
-
+        
         <!-- CTA under carousel -->
         <div style="text-align:center; margin-top: 3rem;">
             <button class="hero-cta-btn" onclick="document.getElementById('form-section').scrollIntoView({behavior:'smooth'})">Únete a la lista de espera exclusiva</button>
         </div>
     </section>
-
+    
     <!-- Benefits -->
     <section class="benefits">
         <div class="benefit-card">
@@ -737,7 +805,7 @@
             <p class="benefit-text">Recordatorios automáticos para tus clientes. Reduce las citas perdidas y llena todos tus espacios disponibles.</p>
         </div>
     </section>
-
+    
     <!-- CTA / Form -->
     <section class="cta-section" id="form-section">
         <div class="cta-container">
@@ -762,11 +830,10 @@
                     <div class="form-group"><label for="benefit">¿Qué beneficio te interesa más?</label>
                         <select id="benefit" name="benefit" required>
                             <option value="">Selecciona una opción</option>
-                            <option value="tiempo">⏰ Ahorrar 2 horas al día</option>
-                            <option value="clientes">📈 Conseguir más clientes</option>
-                            <option value="pagos">💳 Recibir pagos por adelantado</option>
-                            <option value="recordatorios">🔔 Reducir citas perdidas</option>
-                            <option value="otro">💡 Otro</option>
+                            <option value="agenda">📅 Manejar agenda de forma automática</option>
+                            <option value="citas-recordatorios">🔔 Citas y recordatorios automáticos</option>
+                            <option value="promociones">🎁 Dar promociones a clientes</option>
+                            <option value="pagos">💳 Recibir pagos anticipados por WhatsApp</option>
                         </select>
                     </div>
                     <button type="submit" class="submit-btn">Unirme a la lista exclusiva</button>
@@ -775,19 +842,19 @@
             </div>
         </div>
     </section>
-
+    
     <footer>
         <p>Hecho en México ✂️💅💈</p>
-        <p style="margin-top:0.75rem; font-size:0.9rem;">¿Dudas o comentarios? Escríbenos a <a href="mailto:hola@appyume.com" style="color:var(--primary); text-decoration:none; font-weight:600;">hola@appyume.com</a></p>
+        <p style="margin-top:0.75rem; font-size:0.9rem;">¿Dudas o comentarios? Escríbenos a <a href="mailto:hola@yume.mx" style="color:var(--primary); text-decoration:none; font-weight:600;">hola@yume.mx</a></p>
     </footer>
-
+    
     <script>
         let currentSlide = 0;
-        const totalSlides = 5;
+        const totalSlides = 6;
         const viewport = document.querySelector('.carousel-viewport');
         const dotsContainer = document.getElementById('carouselDots');
         const tabs = document.querySelectorAll('.carousel-tab');
-
+        
         // Create dots
         for (let i = 0; i < totalSlides; i++) {
             const dot = document.createElement('button');
@@ -795,7 +862,7 @@
             dot.onclick = () => goToSlide(i);
             dotsContainer.appendChild(dot);
         }
-
+        
         function updateIndicators(n) {
             currentSlide = n;
             document.querySelectorAll('.carousel-dot').forEach((d, i) => {
@@ -807,14 +874,14 @@
             document.getElementById('prevBtn').disabled = n === 0;
             document.getElementById('nextBtn').disabled = n === totalSlides - 1;
         }
-
+        
         function goToSlide(n) {
             viewport.scrollTo({ left: n * viewport.offsetWidth, behavior: 'smooth' });
         }
-
+        
         function nextSlide() { if (currentSlide < totalSlides - 1) goToSlide(currentSlide + 1); }
         function prevSlide() { if (currentSlide > 0) goToSlide(currentSlide - 1); }
-
+        
         // Sync indicators on scroll
         let scrollTimeout;
         viewport.addEventListener('scroll', () => {
@@ -824,16 +891,16 @@
                 if (index !== currentSlide) updateIndicators(index);
             }, 50);
         });
-
+        
         // Keyboard support
         document.addEventListener('keydown', e => {
             if (e.key === 'ArrowRight') nextSlide();
             if (e.key === 'ArrowLeft') prevSlide();
         });
-
+        
         // Init
         document.getElementById('prevBtn').disabled = true;
-
+        
         // Form handler
         document.getElementById('waitlistForm').addEventListener('submit', function(e) {
             e.preventDefault();
