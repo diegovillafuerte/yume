@@ -95,12 +95,13 @@ class TwilioProvisioningService:
             logger.error(f"Failed to list available numbers: {e}")
             return []
 
-    @traced(trace_type="external_api", capture_args=["phone_number", "friendly_name"])
+    @traced(trace_type="external_api", capture_args=["phone_number", "friendly_name", "country_code"])
     async def purchase_number(
         self,
         phone_number: str,
         friendly_name: str | None = None,
         webhook_url: str | None = None,
+        country_code: str = "US",
     ) -> dict[str, Any] | None:
         """Purchase a phone number from Twilio.
 
@@ -108,6 +109,7 @@ class TwilioProvisioningService:
             phone_number: Phone number to purchase (E.164 format)
             friendly_name: Human-readable name for the number
             webhook_url: URL for incoming message webhooks (for SMS, not WhatsApp)
+            country_code: ISO country code (US numbers skip regulatory bundle)
 
         Returns:
             Purchased number details or None on failure
@@ -123,11 +125,12 @@ class TwilioProvisioningService:
             data["FriendlyName"] = friendly_name
         if webhook_url:
             data["SmsUrl"] = webhook_url
-        # Mexican numbers require a verified address and regulatory bundle
-        if settings.twilio_address_sid:
-            data["AddressSid"] = settings.twilio_address_sid
-        if settings.twilio_bundle_sid:
-            data["BundleSid"] = settings.twilio_bundle_sid
+        # Non-US numbers (e.g. MX) require a verified address and regulatory bundle
+        if country_code != "US":
+            if settings.twilio_address_sid:
+                data["AddressSid"] = settings.twilio_address_sid
+            if settings.twilio_bundle_sid:
+                data["BundleSid"] = settings.twilio_bundle_sid
 
         try:
             response = await self.client.post(
@@ -382,6 +385,7 @@ async def provision_number_for_business(
             phone_number=number_to_buy,
             friendly_name=f"Parlo - {business_name}",
             webhook_url=f"{webhook_base_url}/api/v1/webhooks/whatsapp",
+            country_code=country_code,
         )
 
         if not purchased:
