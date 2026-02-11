@@ -1,5 +1,25 @@
 # CLAUDE.md - Parlo Development Guide
 
+## Core Principle: You Can Test Everything Yourself
+
+**This is the most important principle in this codebase. Protect it.**
+
+You (Claude) have full ability to test AI conversation flows, message routing, and UI changes without human intervention. The simulation layer exists so that every change you make can be verified before reporting "done." Never rely on the user to test via WhatsApp — simulate it yourself, read the logs, and confirm correctness.
+
+**What this means in practice:**
+- After changing AI behavior (prompts, tools, flows) → simulate conversations via `/admin/simulate` or the API and verify the response
+- After changing routing logic → simulate messages to different recipients and check the `case` field
+- After changing UI → use Playwright to screenshot staging and verify
+- After any change → run `pytest` to check for regressions
+- If you add a new feature that can't be tested by you, you MUST also add the testability infrastructure (endpoint, eval, etc.) so that it can be
+
+**What to protect:**
+- The simulation endpoints (`app/api/v1/simulate.py`) must stay functional. If you refactor `MessageRouter.route_message()`, ensure simulation still works.
+- The eval tests (`tests/evals/`) must stay passing. If you change AI tools or flows, update the evals.
+- The staging environment must stay deployable. If you add new env vars, update `render-staging.yaml`.
+- The admin logs integration must stay functional. Tracing via `@traced` decorator is how you debug AI behavior — don't remove or break it.
+- Never introduce a code path that can only be tested via real WhatsApp. Every flow must be simulatable.
+
 ## What is Parlo?
 
 Parlo is a WhatsApp-native AI scheduling assistant for beauty businesses in Mexico. Business owners connect their WhatsApp number, and Parlo handles booking conversations automatically via AI.
@@ -343,11 +363,13 @@ Use Playwright to:
 - Simulate: `https://parlo-staging-frontend.onrender.com/admin/simulate`
 
 ### What NOT to do
-- Never say "done" without visual verification on staging or production
+- Never say "done" without verifying the change yourself (simulate, screenshot, or test)
 - Never assume code changes work just because there are no type errors
 - Never skip testing interactive flows (buttons, forms, navigation)
 - Never test UI only on localhost — always verify on staging/production
 - Never skip simulation testing after changing AI behavior, prompts, or tools
+- Never introduce a feature that only the user can test — always add testability
+- Never break the simulation layer, eval tests, or tracing infrastructure
 
 ## Message Simulation (IMPORTANT — Use This for Testing)
 
