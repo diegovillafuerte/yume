@@ -228,8 +228,8 @@ ONBOARDING_TOOLS = [
             "properties": {
                 "country_code": {
                     "type": "string",
-                    "description": "Código de país para el número (MX para México, US para Estados Unidos). Default: MX",
-                    "default": "MX",
+                    "description": "Código de país para el número (MX para México, US para Estados Unidos). Default: US",
+                    "default": "US",
                 },
             },
         },
@@ -884,7 +884,7 @@ class OnboardingHandler(ToolCallingMixin):
                     result = await provision_number_for_business(
                         business_name=collected["business_name"],
                         webhook_base_url=_settings.app_base_url,
-                        country_code="MX",
+                        country_code="US",
                     )
                     if result:
                         collected["twilio_provisioned_number"] = result["phone_number"]
@@ -978,7 +978,7 @@ class OnboardingHandler(ToolCallingMixin):
                 return {"success": False, "error": "Primero necesito al menos un servicio"}
 
             business_name = collected["business_name"]
-            country_code = tool_input.get("country_code", "MX")
+            country_code = tool_input.get("country_code", "US")
 
             try:
                 # Provision a new Twilio WhatsApp number
