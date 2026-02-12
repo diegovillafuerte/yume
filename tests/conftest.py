@@ -95,7 +95,8 @@ async def organization(db: AsyncSession) -> Organization:
     org = Organization(
         id=uuid4(),
         name="Test Salon",
-        owner_phone="+521234567890",
+        phone_country_code="+52",
+        phone_number="1234567890",
         timezone="America/Mexico_City",
     )
     db.add(org)
