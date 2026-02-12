@@ -51,8 +51,11 @@ Staff = ParloUser
 
 
 
-# Use a test database
-TEST_DATABASE_URL = settings.async_database_url.replace("/parlo", "/parlo_test")
+# Use a test database — replace only the last path segment to avoid
+# double-suffixing when DATABASE_URL already ends with parlo_test
+_db_url = settings.async_database_url
+_db_name = _db_url.rsplit("/", 1)[-1]
+TEST_DATABASE_URL = _db_url.rsplit("/", 1)[0] + "/parlo_test" if _db_name != "parlo_test" else _db_url
 
 
 @pytest.fixture(scope="session")
