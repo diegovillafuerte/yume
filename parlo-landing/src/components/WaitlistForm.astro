@@ -116,6 +116,11 @@ const {
         headers: { 'Content-Type': 'text/plain' },
         body: JSON.stringify(formData),
       });
+
+      // Meta Pixel: track waitlist signup as Lead
+      if (typeof fbq !== 'undefined') {
+        fbq('track', 'Lead');
+      }
     } catch (err) {
       console.error('Form submission error:', err);
     }
