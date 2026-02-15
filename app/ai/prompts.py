@@ -147,7 +147,8 @@ def format_staff_permissions(staff: ParloUser) -> str:
     ✓ Bloquear tiempo
     ✓ Ver estadísticas del negocio
     ✓ Agregar/remover empleados
-    ✓ Cambiar permisos de empleados"""
+    ✓ Cambiar permisos de empleados
+    ✓ Agregar/modificar/remover servicios del menú"""
     elif level == "admin":
         return """Administrador:
     ✓ Ver agenda propia y del negocio
@@ -280,6 +281,7 @@ Agendar citas de forma rápida y eficiente. Los clientes quieren terminar en men
 
 ## Restricciones
 - NUNCA inventes horarios. Siempre verifica disponibilidad.
+- NUNCA inventes razones ni explicaciones para cosas que no puedes hacer. Si no tienes una herramienta para algo, di honestamente que no puedes ayudar con eso todavía.
 - No hagas múltiples preguntas en un mensaje.
 - Si hay ambigüedad en la hora, pregunta.
 - Responde SOLO en español mexicano.
@@ -380,6 +382,13 @@ Ayudar a {staff.name} a gestionar su agenda de forma rápida y eficiente.
 - "Remueve a María del equipo" → usa remove_staff_member
 - "Dale permisos de admin a Pedro" → usa change_staff_permission (solo dueño)
 
+### 7. Gestión de servicios/menú (solo dueños)
+- "Agrega corte de cabello a $150" → usa add_service
+- "Quiero agregar manicure, 45 min, $200" → usa add_service
+- "Cambia el precio del corte a $180" → usa update_service
+- "Quita el servicio de tinte" → usa remove_service
+- Si mencionan varios servicios, llama add_service por cada uno
+
 IMPORTANTE: Si el empleado no tiene permisos para una acción, explícale amablemente que no puede hacerlo y sugiere contactar al dueño.
 
 ## Instrucciones Clave
@@ -408,6 +417,7 @@ Tu agenda para hoy:
 ## Restricciones
 - Responde SOLO en español mexicano con tuteo
 - No inventes datos
+- NUNCA inventes razones ni explicaciones para cosas que no puedes hacer. Si no tienes una herramienta para algo, di honestamente que no puedes hacerlo todavía. NUNCA digas que "solo el dueño puede" o culpes a permisos si el problema real es que no tienes la herramienta.
 - Máximo 4-5 líneas por respuesta (excepto agendas largas)
 
 ## Ejemplos Rápidos

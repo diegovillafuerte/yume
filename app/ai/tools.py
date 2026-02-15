@@ -415,6 +415,69 @@ STAFF_TOOLS = [
             "required": ["staff_name", "new_permission_level"],
         },
     },
+    # Service management tools (owner only)
+    {
+        "name": "add_service",
+        "description": "Agrega un nuevo servicio al menú del negocio (solo para dueños). Llama esta herramienta por cada servicio que el dueño quiera agregar.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Nombre del servicio (ej: 'Corte de cabello', 'Manicure')",
+                },
+                "duration_minutes": {
+                    "type": "integer",
+                    "description": "Duración en minutos (ej: 30, 45, 60)",
+                },
+                "price": {
+                    "type": "number",
+                    "description": "Precio en pesos mexicanos (ej: 150, 200, 500)",
+                },
+            },
+            "required": ["name", "duration_minutes", "price"],
+        },
+    },
+    {
+        "name": "update_service",
+        "description": "Actualiza el precio o duración de un servicio existente (solo para dueños).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "service_name": {
+                    "type": "string",
+                    "description": "Nombre del servicio a actualizar",
+                },
+                "new_price": {
+                    "type": "number",
+                    "description": "Nuevo precio en pesos mexicanos (opcional)",
+                },
+                "new_duration_minutes": {
+                    "type": "integer",
+                    "description": "Nueva duración en minutos (opcional)",
+                },
+                "new_name": {
+                    "type": "string",
+                    "description": "Nuevo nombre del servicio (opcional)",
+                },
+            },
+            "required": ["service_name"],
+        },
+    },
+    {
+        "name": "remove_service",
+        "description": "Desactiva un servicio del menú del negocio (solo para dueños). El servicio se desactiva pero no se borra.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "service_name": {
+                    "type": "string",
+                    "description": "Nombre del servicio a remover",
+                },
+            },
+            "required": ["service_name"],
+        },
+    },
 ]
 
 
@@ -511,6 +574,9 @@ class ToolHandler:
             "add_staff_member": lambda inp: self._add_staff_member(inp, staff),
             "remove_staff_member": self._remove_staff_member,
             "change_staff_permission": self._change_staff_permission,
+            "add_service": self._add_service,
+            "update_service": self._update_service,
+            "remove_service": self._remove_service,
         }
 
         handler = handlers.get(tool_name)
@@ -1915,4 +1981,173 @@ class ToolHandler:
             "old_level": old_level,
             "new_level": new_level,
             "description": level_descriptions.get(new_level, new_level),
+        }
+
+    # -------------------------------------------------------------------------
+    # Service Management Tool Implementations (Owner)
+    # -------------------------------------------------------------------------
+
+    async def _add_service(self, tool_input: dict[str, Any]) -> dict[str, Any]:
+        """Add a new service to the business menu."""
+        name = tool_input.get("name", "").strip()
+        duration_minutes = tool_input.get("duration_minutes")
+        price = tool_input.get("price")
+
+        if not name:
+            return {"error": "El nombre del servicio es requerido"}
+        if not duration_minutes or duration_minutes <= 0:
+            return {"error": "La duración debe ser mayor a 0 minutos"}
+        if price is None or price < 0:
+            return {"error": "El precio debe ser mayor o igual a 0"}
+
+        # Check for duplicate service name
+        existing = await self.db.execute(
+            select(ServiceType).where(
+                ServiceType.organization_id == self.org.id,
+                ServiceType.name.ilike(name),
+                ServiceType.is_active == True,
+            )
+        )
+        if existing.scalar_one_or_none():
+            return {"error": f"Ya existe un servicio llamado '{name}'"}
+
+        # Get primary location to find a spot to link services
+        from app.models import Location, Spot
+
+        location_result = await self.db.execute(
+            select(Location).where(
+                Location.organization_id == self.org.id,
+                Location.is_primary == True,
+            )
+        )
+        location = location_result.scalar_one_or_none()
+
+        # Create the service
+        new_service = ServiceType(
+            organization_id=self.org.id,
+            name=name,
+            duration_minutes=int(duration_minutes),
+            price_cents=int(price * 100),
+            is_active=True,
+        )
+        self.db.add(new_service)
+        await self.db.flush()
+        await self.db.refresh(new_service)
+
+        # Link service to all active spots in the location
+        if location:
+            spot_result = await self.db.execute(
+                select(Spot).where(
+                    Spot.location_id == location.id,
+                    Spot.is_active == True,
+                )
+            )
+            spots = spot_result.scalars().all()
+            for spot in spots:
+                from app.models import spot_service_types
+
+                await self.db.execute(
+                    spot_service_types.insert().values(
+                        spot_id=spot.id,
+                        service_type_id=new_service.id,
+                    )
+                )
+            await self.db.flush()
+
+        # Return updated menu
+        all_services = await self.db.execute(
+            select(ServiceType).where(
+                ServiceType.organization_id == self.org.id,
+                ServiceType.is_active == True,
+            )
+        )
+        menu = [
+            f"• {s.name} - ${s.price_cents / 100:.0f} MXN ({s.duration_minutes} min)"
+            for s in all_services.scalars().all()
+        ]
+
+        return {
+            "success": True,
+            "message": f"Servicio '{name}' agregado al menú",
+            "service_name": name,
+            "price": f"${price:.0f} MXN",
+            "duration": f"{duration_minutes} min",
+            "current_menu": "\n".join(menu),
+        }
+
+    async def _update_service(self, tool_input: dict[str, Any]) -> dict[str, Any]:
+        """Update an existing service."""
+        service_name = tool_input.get("service_name", "").strip()
+        new_price = tool_input.get("new_price")
+        new_duration = tool_input.get("new_duration_minutes")
+        new_name = tool_input.get("new_name", "").strip()
+
+        if not service_name:
+            return {"error": "El nombre del servicio es requerido"}
+
+        # Find the service
+        result = await self.db.execute(
+            select(ServiceType).where(
+                ServiceType.organization_id == self.org.id,
+                ServiceType.name.ilike(f"%{service_name}%"),
+                ServiceType.is_active == True,
+            )
+        )
+        service = result.scalar_one_or_none()
+
+        if not service:
+            return {"error": f"Servicio '{service_name}' no encontrado"}
+
+        changes = []
+        if new_price is not None:
+            old_price = service.price_cents / 100
+            service.price_cents = int(new_price * 100)
+            changes.append(f"precio: ${old_price:.0f} → ${new_price:.0f}")
+        if new_duration is not None:
+            old_duration = service.duration_minutes
+            service.duration_minutes = int(new_duration)
+            changes.append(f"duración: {old_duration} → {new_duration} min")
+        if new_name:
+            old_name = service.name
+            service.name = new_name
+            changes.append(f"nombre: {old_name} → {new_name}")
+
+        if not changes:
+            return {"error": "No se especificó ningún cambio"}
+
+        await self.db.flush()
+
+        return {
+            "success": True,
+            "message": f"Servicio actualizado: {', '.join(changes)}",
+            "service_name": service.name,
+        }
+
+    async def _remove_service(self, tool_input: dict[str, Any]) -> dict[str, Any]:
+        """Deactivate a service from the menu."""
+        service_name = tool_input.get("service_name", "").strip()
+
+        if not service_name:
+            return {"error": "El nombre del servicio es requerido"}
+
+        # Find the service
+        result = await self.db.execute(
+            select(ServiceType).where(
+                ServiceType.organization_id == self.org.id,
+                ServiceType.name.ilike(f"%{service_name}%"),
+                ServiceType.is_active == True,
+            )
+        )
+        service = result.scalar_one_or_none()
+
+        if not service:
+            return {"error": f"Servicio '{service_name}' no encontrado"}
+
+        service.is_active = False
+        await self.db.flush()
+
+        return {
+            "success": True,
+            "message": f"Servicio '{service.name}' removido del menú",
+            "service_name": service.name,
         }

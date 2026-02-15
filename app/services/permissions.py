@@ -58,6 +58,9 @@ TOOL_PERMISSION_MAP: dict[str, str] = {
     "change_business_hours": "change_business_hours",
     "change_service_duration": "change_service_durations",
     "get_business_stats": "get_business_stats",
+    "add_service": "modify_services",
+    "update_service": "modify_services",
+    "remove_service": "modify_services",
 }
 
 
