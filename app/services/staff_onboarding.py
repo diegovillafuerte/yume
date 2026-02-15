@@ -272,6 +272,7 @@ class StaffOnboardingHandler:
         result = await self.db.execute(
             select(StaffOnboardingSession).where(
                 StaffOnboardingSession.staff_id == staff.id,
+                StaffOnboardingSession.organization_id == organization_id,
             )
         )
         session = result.scalar_one_or_none()

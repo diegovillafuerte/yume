@@ -21,9 +21,16 @@ from app.schemas.availability import AvailableSlot
 from app.services.tracing import traced
 
 
-async def get_appointment(db: AsyncSession, appointment_id: UUID) -> Appointment | None:
-    """Get appointment by ID."""
-    result = await db.execute(select(Appointment).where(Appointment.id == appointment_id))
+async def get_appointment(
+    db: AsyncSession, appointment_id: UUID, organization_id: UUID
+) -> Appointment | None:
+    """Get appointment by ID, scoped to organization."""
+    result = await db.execute(
+        select(Appointment).where(
+            Appointment.id == appointment_id,
+            Appointment.organization_id == organization_id,
+        )
+    )
     return result.scalar_one_or_none()
 
 
@@ -222,7 +229,12 @@ async def get_available_slots(
         date_to = date_from
 
     # Get service type to know duration
-    service_result = await db.execute(select(ServiceType).where(ServiceType.id == service_type_id))
+    service_result = await db.execute(
+        select(ServiceType).where(
+            ServiceType.id == service_type_id,
+            ServiceType.organization_id == organization_id,
+        )
+    )
     service = service_result.scalar_one_or_none()
     if not service:
         return []
@@ -309,6 +321,7 @@ async def get_available_slots(
                     # Check if slot conflicts with existing appointments
                     conflict_result = await db.execute(
                         select(Appointment).where(
+                            Appointment.organization_id == organization_id,
                             Appointment.parlo_user_id == staff_member.id,
                             Appointment.status.in_(
                                 [

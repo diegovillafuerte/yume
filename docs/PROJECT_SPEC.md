@@ -1,4 +1,5 @@
 # Parlo: Project Initialization Prompt for Claude Code
+<!-- last-verified: 2026-02-15 -->
 
 ## Instructions for Claude Code
 

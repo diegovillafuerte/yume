@@ -1,4 +1,5 @@
 # Deployment Guide
+<!-- last-verified: 2026-02-15 -->
 
 ## Infrastructure (Render)
 

@@ -9,7 +9,9 @@ from app.models import EndCustomer
 from app.schemas.customer import CustomerCreate, CustomerUpdate
 
 
-async def get_customer(db: AsyncSession, customer_id: UUID) -> EndCustomer | None:
+async def get_customer(
+    db: AsyncSession, customer_id: UUID
+) -> EndCustomer | None:  # org-scope-ok: callers verify org
     """Get customer by ID."""
     result = await db.execute(select(EndCustomer).where(EndCustomer.id == customer_id))
     return result.scalar_one_or_none()

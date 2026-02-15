@@ -106,7 +106,7 @@ async def get_or_create_customer(
     return customer
 
 
-async def lookup_cross_business_profile(
+async def lookup_cross_business_profile(  # org-scope-ok: cross-org lookup
     db: AsyncSession,
     phone_number: str,
 ) -> dict[str, Any]:
@@ -286,6 +286,7 @@ async def get_customer_preferences(
         select(Appointment)
         .where(
             Appointment.end_customer_id == customer.id,
+            Appointment.organization_id == customer.organization_id,
             Appointment.status == AppointmentStatus.COMPLETED.value,
         )
         .order_by(Appointment.scheduled_start.desc())

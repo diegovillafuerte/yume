@@ -659,7 +659,10 @@ class OnboardingHandler(ToolCallingMixin):
             try:
                 conv_id = UUID(conv_id_str)
                 result = await self.db.execute(
-                    select(Conversation).where(Conversation.id == conv_id)
+                    select(Conversation).where(
+                        Conversation.id == conv_id,
+                        Conversation.organization_id == org.id,
+                    )
                 )
                 conv = result.scalar_one_or_none()
                 if conv:

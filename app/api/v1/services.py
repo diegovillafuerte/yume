@@ -61,8 +61,8 @@ async def get_service(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> ServiceType:
     """Get service type details."""
-    service = await service_service.get_service_type(db, service_id)
-    if not service or service.organization_id != org.id:
+    service = await service_service.get_service_type(db, service_id, org.id)
+    if not service:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Service type {service_id} not found",
@@ -82,8 +82,8 @@ async def update_service(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> ServiceType:
     """Update a service type."""
-    service = await service_service.get_service_type(db, service_id)
-    if not service or service.organization_id != org.id:
+    service = await service_service.get_service_type(db, service_id, org.id)
+    if not service:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Service type {service_id} not found",
@@ -105,8 +105,8 @@ async def delete_service(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> None:
     """Delete a service type (soft delete)."""
-    service = await service_service.get_service_type(db, service_id)
-    if not service or service.organization_id != org.id:
+    service = await service_service.get_service_type(db, service_id, org.id)
+    if not service:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Service type {service_id} not found",

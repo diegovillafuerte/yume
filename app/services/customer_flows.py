@@ -478,6 +478,7 @@ class CustomerFlowHandler:
         result = await self.db.execute(
             select(CustomerFlowSession).where(
                 CustomerFlowSession.conversation_id == conversation_id,
+                CustomerFlowSession.organization_id == self.org.id,
                 CustomerFlowSession.is_active == True,
             )
         )
@@ -715,10 +716,13 @@ class CustomerFlowHandler:
         return result.scalar_one_or_none()
 
     async def _get_customer_appointments(self, customer_id: UUID) -> list[Appointment]:
-        """Get customer's appointments."""
+        """Get customer's appointments, scoped to organization."""
         result = await self.db.execute(
             select(Appointment)
-            .where(Appointment.end_customer_id == customer_id)
+            .where(
+                Appointment.end_customer_id == customer_id,
+                Appointment.organization_id == self.org.id,
+            )
             .order_by(Appointment.scheduled_start.desc())
             .limit(10)
         )
@@ -755,7 +759,7 @@ class CustomerFlowHandler:
         )
 
 
-async def check_abandoned_sessions(db: AsyncSession) -> int:
+async def check_abandoned_sessions(db: AsyncSession) -> int:  # org-scope-ok: system-wide task
     """Check for and mark abandoned flow sessions.
 
     This should be called periodically (e.g., via Celery task).

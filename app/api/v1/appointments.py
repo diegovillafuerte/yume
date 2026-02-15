@@ -128,8 +128,8 @@ async def get_appointment(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> Appointment:
     """Get appointment details."""
-    appointment = await scheduling_service.get_appointment(db, appointment_id)
-    if not appointment or appointment.organization_id != org.id:
+    appointment = await scheduling_service.get_appointment(db, appointment_id, org.id)
+    if not appointment:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Appointment {appointment_id} not found",
@@ -149,8 +149,8 @@ async def update_appointment(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> Appointment:
     """Update an appointment."""
-    appointment = await scheduling_service.get_appointment(db, appointment_id)
-    if not appointment or appointment.organization_id != org.id:
+    appointment = await scheduling_service.get_appointment(db, appointment_id, org.id)
+    if not appointment:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Appointment {appointment_id} not found",
@@ -180,8 +180,8 @@ async def cancel_appointment(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> Appointment:
     """Cancel an appointment."""
-    appointment = await scheduling_service.get_appointment(db, appointment_id)
-    if not appointment or appointment.organization_id != org.id:
+    appointment = await scheduling_service.get_appointment(db, appointment_id, org.id)
+    if not appointment:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Appointment {appointment_id} not found",
@@ -206,8 +206,8 @@ async def complete_appointment(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> Appointment:
     """Mark an appointment as completed."""
-    appointment = await scheduling_service.get_appointment(db, appointment_id)
-    if not appointment or appointment.organization_id != org.id:
+    appointment = await scheduling_service.get_appointment(db, appointment_id, org.id)
+    if not appointment:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Appointment {appointment_id} not found",

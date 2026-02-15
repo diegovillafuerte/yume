@@ -6,18 +6,25 @@ Checks:
 2. CLAUDE.md is under 200 lines
 3. Each docs/ file has a # Title header
 4. Internal cross-references (docs/foo.md) point to existing files
+5. Doc freshness (last-verified comment not older than 60 days)
+6. quality.md staleness (new test files not referenced)
 """
 
 import re
 import sys
+from datetime import date, timedelta
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 CLAUDE_MD = ROOT / "CLAUDE.md"
 DOCS_DIR = ROOT / "docs"
+TESTS_DIR = ROOT / "tests"
+QUALITY_MD = DOCS_DIR / "quality.md"
 MAX_CLAUDE_LINES = 200
+FRESHNESS_DAYS = 60
 
 errors: list[str] = []
+warnings: list[str] = []
 
 
 def check_claude_md_size():
@@ -72,6 +79,67 @@ def check_cross_references():
                 )
 
 
+def check_doc_freshness():
+    """Check docs have a last-verified comment that isn't too old."""
+    pattern = re.compile(r"<!--\s*last-verified:\s*(\d{4}-\d{2}-\d{2})\s*-->")
+    threshold = date.today() - timedelta(days=FRESHNESS_DAYS)
+
+    for md_file in sorted(DOCS_DIR.glob("*.md")):
+        content = md_file.read_text()
+        match = pattern.search(content)
+        rel_path = md_file.relative_to(ROOT)
+
+        if not match:
+            warnings.append(
+                f"{rel_path}: Missing '<!-- last-verified: YYYY-MM-DD -->' comment. "
+                f"FIX: Add freshness comment after verifying content is accurate"
+            )
+            continue
+
+        try:
+            verified_date = date.fromisoformat(match.group(1))
+            if verified_date < threshold:
+                days_ago = (date.today() - verified_date).days
+                warnings.append(
+                    f"{rel_path}: Last verified {days_ago} days ago ({match.group(1)}). "
+                    f"FIX: Re-verify content is accurate and update the date"
+                )
+        except ValueError:
+            warnings.append(
+                f"{rel_path}: Invalid date in last-verified comment: '{match.group(1)}'. "
+                f"FIX: Use YYYY-MM-DD format"
+            )
+
+
+def check_quality_staleness():
+    """Check if quality.md might be outdated based on test file counts."""
+    if not QUALITY_MD.exists():
+        return
+
+    quality_content = QUALITY_MD.read_text()
+
+    # Collect test files from known test directories
+    test_files: set[str] = set()
+    for test_dir in [TESTS_DIR / "evals", TESTS_DIR / "test_onboarding"]:
+        if test_dir.exists():
+            for f in test_dir.rglob("test_*.py"):
+                test_files.add(f.name)
+
+    # Also check for standalone test files in tests/
+    if TESTS_DIR.exists():
+        for f in TESTS_DIR.glob("test_*.py"):
+            test_files.add(f.name)
+
+    # Check if any test files aren't mentioned in quality.md
+    unreferenced = [f for f in sorted(test_files) if f not in quality_content]
+    if unreferenced:
+        warnings.append(
+            f"docs/quality.md may be outdated — {len(unreferenced)} test file(s) not referenced: "
+            f"{', '.join(unreferenced[:5])}. "
+            f"FIX: Review and update domain/layer grades in quality.md"
+        )
+
+
 def main():
     print("Validating documentation structure...")
 
@@ -79,6 +147,13 @@ def main():
     check_documentation_map()
     check_doc_headers()
     check_cross_references()
+    check_doc_freshness()
+    check_quality_staleness()
+
+    if warnings:
+        print(f"\n{len(warnings)} warning(s):\n")
+        for warning in warnings:
+            print(f"  WARN: {warning}")
 
     if errors:
         print(f"\n{len(errors)} error(s) found:\n")
@@ -86,7 +161,10 @@ def main():
             print(f"  ERROR: {error}")
         sys.exit(1)
     else:
-        print("All documentation checks passed.")
+        if not warnings:
+            print("All documentation checks passed.")
+        else:
+            print("\nNo errors (warnings are non-blocking).")
         sys.exit(0)
 
 

@@ -341,7 +341,7 @@ async def get_active_handoff_for_owner(
     return result.scalar_one_or_none()
 
 
-async def check_handoff_timeouts(
+async def check_handoff_timeouts(  # org-scope-ok: system-wide task
     db: AsyncSession,
     timeout_minutes: int = 30,
 ) -> int:

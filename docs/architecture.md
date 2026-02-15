@@ -1,4 +1,5 @@
 # Architecture
+<!-- last-verified: 2026-02-15 -->
 
 ## System Overview
 

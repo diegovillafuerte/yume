@@ -1,4 +1,5 @@
 # Testing Guide
+<!-- last-verified: 2026-02-15 -->
 
 ## Core Principle: You Can Test Everything Yourself
 

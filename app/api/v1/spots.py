@@ -81,16 +81,8 @@ async def get_spot(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> Spot:
     """Get spot details."""
-    spot = await spot_service.get_spot(db, spot_id)
+    spot = await spot_service.get_spot(db, spot_id, org.id)
     if not spot:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Spot {spot_id} not found",
-        )
-
-    # Verify the spot's location belongs to the organization
-    location = await location_service.get_location(db, spot.location_id)
-    if not location or location.organization_id != org.id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Spot {spot_id} not found",
@@ -111,16 +103,8 @@ async def update_spot(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> Spot:
     """Update a spot."""
-    spot = await spot_service.get_spot(db, spot_id)
+    spot = await spot_service.get_spot(db, spot_id, org.id)
     if not spot:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Spot {spot_id} not found",
-        )
-
-    # Verify the spot's location belongs to the organization
-    location = await location_service.get_location(db, spot.location_id)
-    if not location or location.organization_id != org.id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Spot {spot_id} not found",
@@ -142,16 +126,8 @@ async def delete_spot(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> None:
     """Delete a spot (soft delete)."""
-    spot = await spot_service.get_spot(db, spot_id)
+    spot = await spot_service.get_spot(db, spot_id, org.id)
     if not spot:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Spot {spot_id} not found",
-        )
-
-    # Verify the spot's location belongs to the organization
-    location = await location_service.get_location(db, spot.location_id)
-    if not location or location.organization_id != org.id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Spot {spot_id} not found",
@@ -173,16 +149,8 @@ async def assign_spot_services(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> Spot:
     """Update which services can be performed at this spot."""
-    spot = await spot_service.get_spot(db, spot_id)
+    spot = await spot_service.get_spot(db, spot_id, org.id)
     if not spot:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Spot {spot_id} not found",
-        )
-
-    # Verify the spot's location belongs to the organization
-    location = await location_service.get_location(db, spot.location_id)
-    if not location or location.organization_id != org.id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Spot {spot_id} not found",

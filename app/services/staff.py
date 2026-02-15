@@ -11,11 +11,14 @@ from app.models import Organization, ParloUser, ServiceType
 from app.schemas.staff import StaffCreate, StaffUpdate
 
 
-async def get_staff(db: AsyncSession, staff_id: UUID) -> ParloUser | None:
-    """Get staff member by ID with service types loaded."""
+async def get_staff(db: AsyncSession, staff_id: UUID, organization_id: UUID) -> ParloUser | None:
+    """Get staff member by ID, scoped to organization, with service types loaded."""
     result = await db.execute(
         select(ParloUser)
-        .where(ParloUser.id == staff_id)
+        .where(
+            ParloUser.id == staff_id,
+            ParloUser.organization_id == organization_id,
+        )
         .options(selectinload(ParloUser.service_types))
     )
     return result.scalar_one_or_none()
@@ -153,7 +156,12 @@ async def update_staff_services(
     """Update the services that this staff member can perform."""
     # Fetch the service types by their IDs
     if service_type_ids:
-        result = await db.execute(select(ServiceType).where(ServiceType.id.in_(service_type_ids)))
+        result = await db.execute(
+            select(ServiceType).where(
+                ServiceType.id.in_(service_type_ids),
+                ServiceType.organization_id == staff.organization_id,
+            )
+        )
         service_types = list(result.scalars().all())
     else:
         service_types = []

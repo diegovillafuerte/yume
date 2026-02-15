@@ -1,4 +1,5 @@
 # Coding Conventions
+<!-- last-verified: 2026-02-15 -->
 
 ## Spanish Only
 
@@ -10,7 +11,7 @@ All AI responses must be in Mexican Spanish:
 
 ## Organization Scoping
 
-Every database query in service and API layers **must** filter by `organization_id` to prevent data leakage between businesses. This is the most critical security invariant.
+Every database query in service and API layers **must** filter by `organization_id` to prevent data leakage between businesses. This is the most critical security invariant, enforced by `scripts/lint_golden_rules.py` (Rule 6).
 
 ```python
 # CORRECT
@@ -26,6 +27,10 @@ result = await db.execute(
     select(Appointment).where(Appointment.id == appointment_id)
 )
 ```
+
+**Models with org_id**: `Appointment`, `EndCustomer`, `Location`, `ParloUser`, `ServiceType`, `Conversation`, `CustomerFlowSession`, `StaffOnboardingSession`, `AuthToken`.
+
+**Exceptions**: Functions that intentionally query cross-org (e.g., auth token lookup, cross-business profile) can use `# org-scope-ok: <reason>` on the function definition line to suppress the linter.
 
 ## Avoid Over-Engineering
 

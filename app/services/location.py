@@ -9,7 +9,9 @@ from app.models import Location
 from app.schemas.location import LocationCreate, LocationUpdate
 
 
-async def get_location(db: AsyncSession, location_id: UUID) -> Location | None:
+async def get_location(
+    db: AsyncSession, location_id: UUID
+) -> Location | None:  # org-scope-ok: callers verify org
     """Get location by ID."""
     result = await db.execute(select(Location).where(Location.id == location_id))
     return result.scalar_one_or_none()

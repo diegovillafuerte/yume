@@ -247,7 +247,10 @@ class ConversationHandler(ToolCallingMixin):
 
         result = await self.db.execute(
             select(Appointment)
-            .where(Appointment.end_customer_id == customer_id)
+            .where(
+                Appointment.end_customer_id == customer_id,
+                Appointment.organization_id == self.org.id,
+            )
             .order_by(Appointment.scheduled_start.desc())
             .limit(5)
         )

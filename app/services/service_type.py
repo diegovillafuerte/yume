@@ -9,9 +9,16 @@ from app.models import ServiceType
 from app.schemas.service_type import ServiceTypeCreate, ServiceTypeUpdate
 
 
-async def get_service_type(db: AsyncSession, service_type_id: UUID) -> ServiceType | None:
-    """Get service type by ID."""
-    result = await db.execute(select(ServiceType).where(ServiceType.id == service_type_id))
+async def get_service_type(
+    db: AsyncSession, service_type_id: UUID, organization_id: UUID
+) -> ServiceType | None:
+    """Get service type by ID, scoped to organization."""
+    result = await db.execute(
+        select(ServiceType).where(
+            ServiceType.id == service_type_id,
+            ServiceType.organization_id == organization_id,
+        )
+    )
     return result.scalar_one_or_none()
 
 

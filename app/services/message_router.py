@@ -425,6 +425,7 @@ class MessageRouter:
                 result = await self.db.execute(
                     select(StaffOnboardingSession).where(
                         StaffOnboardingSession.staff_id == staff.id,
+                        StaffOnboardingSession.organization_id == org.id,
                         StaffOnboardingSession.state != StaffOnboardingState.COMPLETED.value,
                         StaffOnboardingSession.state != StaffOnboardingState.ABANDONED.value,
                     )

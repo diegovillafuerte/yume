@@ -25,7 +25,9 @@ def generate_magic_link_token() -> tuple[str, str]:
     return plain_token, hashed_token
 
 
-async def get_organization_by_phone(db: AsyncSession, phone_number: str) -> Organization | None:
+async def get_organization_by_phone(
+    db: AsyncSession, phone_number: str
+) -> Organization | None:  # org-scope-ok: cross-org lookup
     """Get organization by phone number.
 
     Checks both the org's phone_number and owner staff phone numbers.
@@ -82,7 +84,7 @@ async def create_magic_link_token(db: AsyncSession, organization_id: UUID) -> tu
     return plain_token, auth_token
 
 
-async def verify_magic_link_token(
+async def verify_magic_link_token(  # org-scope-ok: cross-org lookup
     db: AsyncSession, plain_token: str
 ) -> tuple[Organization | None, str | None]:
     """Verify a magic link token and return the organization.

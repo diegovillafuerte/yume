@@ -88,8 +88,8 @@ async def get_staff(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> ParloUser:
     """Get staff member details."""
-    staff = await staff_service.get_staff(db, staff_id)
-    if not staff or staff.organization_id != org.id:
+    staff = await staff_service.get_staff(db, staff_id, org.id)
+    if not staff:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Staff member {staff_id} not found",
@@ -109,8 +109,8 @@ async def update_staff(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> ParloUser:
     """Update a staff member."""
-    staff = await staff_service.get_staff(db, staff_id)
-    if not staff or staff.organization_id != org.id:
+    staff = await staff_service.get_staff(db, staff_id, org.id)
+    if not staff:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Staff member {staff_id} not found",
@@ -141,8 +141,8 @@ async def delete_staff(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> None:
     """Delete a staff member (soft delete)."""
-    staff = await staff_service.get_staff(db, staff_id)
-    if not staff or staff.organization_id != org.id:
+    staff = await staff_service.get_staff(db, staff_id, org.id)
+    if not staff:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Staff member {staff_id} not found",
@@ -164,8 +164,8 @@ async def assign_staff_services(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> ParloUser:
     """Update which services this staff member can perform."""
-    staff = await staff_service.get_staff(db, staff_id)
-    if not staff or staff.organization_id != org.id:
+    staff = await staff_service.get_staff(db, staff_id, org.id)
+    if not staff:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Staff member {staff_id} not found",

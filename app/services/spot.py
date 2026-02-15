@@ -6,14 +6,20 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models import ServiceType, Spot
+from app.models import Location, ServiceType, Spot
 from app.schemas.spot import SpotCreate, SpotUpdate
 
 
-async def get_spot(db: AsyncSession, spot_id: UUID) -> Spot | None:
-    """Get spot by ID with service types loaded."""
+async def get_spot(db: AsyncSession, spot_id: UUID, organization_id: UUID) -> Spot | None:
+    """Get spot by ID, scoped to organization via location, with service types loaded."""
     result = await db.execute(
-        select(Spot).where(Spot.id == spot_id).options(selectinload(Spot.service_types))
+        select(Spot)
+        .join(Location, Spot.location_id == Location.id)
+        .where(
+            Spot.id == spot_id,
+            Location.organization_id == organization_id,
+        )
+        .options(selectinload(Spot.service_types))
     )
     return result.scalar_one_or_none()
 
@@ -59,7 +65,9 @@ async def delete_spot(db: AsyncSession, spot: Spot) -> None:
     await db.flush()
 
 
-async def update_spot_services(db: AsyncSession, spot: Spot, service_type_ids: list[UUID]) -> Spot:
+async def update_spot_services(
+    db: AsyncSession, spot: Spot, service_type_ids: list[UUID]
+) -> Spot:  # org-scope-ok: callers verify org
     """Update the services that can be performed at this spot."""
     # Fetch the service types by their IDs
     if service_type_ids:
