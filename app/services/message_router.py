@@ -714,6 +714,7 @@ class MessageRouter:
         conversation_handler = ConversationHandler(
             db=self.db,
             organization=org,
+            mock_mode=self.whatsapp.mock_mode,
         )
 
         response = await conversation_handler.handle_staff_message(
@@ -769,6 +770,7 @@ class MessageRouter:
         flow_handler = CustomerFlowHandler(
             db=self.db,
             organization=org,
+            mock_mode=self.whatsapp.mock_mode,
         )
 
         response = await flow_handler.handle_message(

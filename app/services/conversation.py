@@ -46,6 +46,7 @@ class ConversationHandler(ToolCallingMixin):
         db: AsyncSession,
         organization: Organization,
         openai_client: OpenAIClient | None = None,
+        mock_mode: bool = False,
     ):
         """Initialize conversation handler.
 
@@ -53,11 +54,12 @@ class ConversationHandler(ToolCallingMixin):
             db: Database session
             organization: Current organization
             openai_client: OpenAI client (uses singleton if not provided)
+            mock_mode: If True, WhatsApp messages are mocked (for simulation)
         """
         self.db = db
         self.org = organization
         self.client = openai_client or get_openai_client()
-        self.tool_handler = ToolHandler(db, organization)
+        self.tool_handler = ToolHandler(db, organization, mock_mode=mock_mode)
 
     @traced
     async def handle_customer_message(
@@ -88,12 +90,17 @@ class ConversationHandler(ToolCallingMixin):
         # Get customer's previous appointments for context
         previous_appointments = await self._get_customer_appointments(customer.id)
 
+        # Get primary location for business hours and address
+        location = await self._get_primary_location()
+
         # Build system prompt
         system_prompt = build_customer_system_prompt(
             org=self.org,
             customer=customer,
             services=services,
             previous_appointments=previous_appointments,
+            business_hours=location.business_hours if location else None,
+            address=location.address if location else None,
         )
 
         # Get conversation history
@@ -142,11 +149,16 @@ class ConversationHandler(ToolCallingMixin):
         # Get services for prompt
         services = await self._get_services()
 
+        # Get primary location for business hours and address
+        location = await self._get_primary_location()
+
         # Build system prompt
         system_prompt = build_staff_system_prompt(
             org=self.org,
             staff=staff,
             services=services,
+            business_hours=location.business_hours if location else None,
+            address=location.address if location else None,
         )
 
         # For staff, we may not have a persistent conversation
@@ -218,6 +230,18 @@ class ConversationHandler(ToolCallingMixin):
             )
         )
         return list(result.scalars().all())
+
+    async def _get_primary_location(self):
+        """Get primary location for the organization."""
+        from app.models import Location
+
+        result = await self.db.execute(
+            select(Location).where(
+                Location.organization_id == self.org.id,
+                Location.is_primary == True,
+            )
+        )
+        return result.scalar_one_or_none()
 
     async def _get_customer_appointments(self, customer_id: UUID) -> list[Any]:
         """Get customer's previous appointments."""

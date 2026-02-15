@@ -10,6 +10,7 @@ import logging
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Any
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -423,15 +424,31 @@ STAFF_TOOLS = [
 class ToolHandler:
     """Handles tool execution for AI conversations."""
 
-    def __init__(self, db: AsyncSession, organization: Organization):
+    def __init__(self, db: AsyncSession, organization: Organization, mock_mode: bool = False):
         """Initialize tool handler.
 
         Args:
             db: Database session
             organization: Current organization
+            mock_mode: If True, WhatsApp messages are mocked (for simulation)
         """
         self.db = db
         self.org = organization
+        self.mock_mode = mock_mode
+
+    def _get_org_tz(self) -> ZoneInfo:
+        """Get organization timezone."""
+        return ZoneInfo(self.org.timezone) if self.org.timezone else ZoneInfo("America/Mexico_City")
+
+    def _to_local(self, utc_dt: datetime) -> datetime:
+        """Convert UTC datetime to org local time."""
+        return utc_dt.astimezone(self._get_org_tz())
+
+    def _to_utc(self, naive_or_local_dt: datetime) -> datetime:
+        """Convert naive/local datetime to UTC. Treats naive as org-local."""
+        if naive_or_local_dt.tzinfo is None:
+            return naive_or_local_dt.replace(tzinfo=self._get_org_tz()).astimezone(timezone.utc)
+        return naive_or_local_dt.astimezone(timezone.utc)
 
     @traced(trace_type="ai_tool", capture_args=["tool_name", "tool_input"])
     async def execute_tool(
@@ -643,11 +660,12 @@ class ToolHandler:
                 "suggestion": "Pregunta al cliente si le sirve otra fecha",
             }
 
-        # Group slots by date for clearer display
+        # Group slots by date for clearer display (convert UTC → local)
         slots_by_date = {}
         for slot in slots:
-            date_key = slot.start_time.strftime("%Y-%m-%d")
-            day_name = slot.start_time.strftime("%A")  # Day of week
+            local_start = self._to_local(slot.start_time)
+            date_key = local_start.strftime("%Y-%m-%d")
+            day_name = local_start.strftime("%A")  # Day of week
             if date_key not in slots_by_date:
                 slots_by_date[date_key] = {
                     "date": date_key,
@@ -655,8 +673,8 @@ class ToolHandler:
                     "times": [],
                 }
             slots_by_date[date_key]["times"].append({
-                "time": slot.start_time.strftime("%I:%M %p"),
-                "iso_time": slot.start_time.isoformat(),
+                "time": local_start.strftime("%I:%M %p"),
+                "iso_time": slot.start_time.isoformat(),  # Keep UTC for booking
                 "staff_id": str(slot.staff_id),
                 "staff_name": slot.staff_name,
             })
@@ -737,9 +755,10 @@ class ToolHandler:
             if not service:
                 return {"error": f"Servicio '{service_name}' no encontrado"}
 
-        # Parse start time
+        # Parse start time (treat naive as org-local, convert to UTC)
         try:
             start_time = datetime.fromisoformat(start_time_str)
+            start_time = self._to_utc(start_time)
         except ValueError:
             return {"error": "Formato de fecha/hora inválido"}
 
@@ -815,7 +834,7 @@ class ToolHandler:
 
         if conflicts:
             conflict = conflicts[0]
-            conflict_time = conflict.scheduled_start.strftime("%I:%M %p")
+            conflict_time = self._to_local(conflict.scheduled_start).strftime("%I:%M %p")
             return {
                 "error": f"El horario no está disponible. {staff.name} ya tiene una cita a las {conflict_time}.",
                 "suggestion": "Por favor pregunta al cliente por otro horario.",
@@ -845,12 +864,25 @@ class ToolHandler:
                 "suggestion": "Por favor pregunta al cliente por otro horario.",
             }
 
+        local_start = self._to_local(start_time)
+
+        # Notify business owner(s) about the new booking (fire-and-forget)
+        try:
+            await self._notify_owners_new_booking(
+                customer=customer,
+                service=service,
+                staff=staff,
+                local_start=local_start,
+            )
+        except Exception as e:
+            logger.error(f"Failed to send owner booking notification: {e}", exc_info=True)
+
         return {
             "success": True,
             "appointment_id": str(appointment.id),
             "service": service.name,
-            "date": start_time.strftime("%A %d de %B"),
-            "time": start_time.strftime("%I:%M %p"),
+            "date": local_start.strftime("%A %d de %B"),
+            "time": local_start.strftime("%I:%M %p"),
             "staff": staff.name,
             "price": f"${service.price_cents / 100:.0f} MXN",
             "duration": f"{service.duration_minutes} min",
@@ -886,11 +918,12 @@ class ToolHandler:
             service = await self.db.get(ServiceType, apt.service_type_id)
             staff = await self.db.get(Staff, apt.parlo_user_id) if apt.parlo_user_id else None
 
+            local_start = self._to_local(apt.scheduled_start)
             formatted.append({
                 "id": str(apt.id),
                 "service": service.name if service else "Unknown",
-                "date": apt.scheduled_start.strftime("%A %d de %B"),
-                "time": apt.scheduled_start.strftime("%I:%M %p"),
+                "date": local_start.strftime("%A %d de %B"),
+                "time": local_start.strftime("%I:%M %p"),
                 "staff": staff.name if staff else "Por asignar",
                 "status": apt.status,
             })
@@ -946,6 +979,7 @@ class ToolHandler:
         try:
             apt_uuid = UUID(appointment_id)
             new_start_time = datetime.fromisoformat(new_start_time_str)
+            new_start_time = self._to_utc(new_start_time)
         except ValueError:
             return {"error": "Parámetros inválidos"}
 
@@ -977,7 +1011,7 @@ class ToolHandler:
 
         if conflicts:
             conflict = conflicts[0]
-            conflict_time = conflict.scheduled_start.strftime("%I:%M %p")
+            conflict_time = self._to_local(conflict.scheduled_start).strftime("%I:%M %p")
             return {
                 "error": f"El nuevo horario no está disponible. Ya hay una cita a las {conflict_time}.",
                 "suggestion": "Por favor elige otro horario.",
@@ -994,11 +1028,12 @@ class ToolHandler:
                 "suggestion": "Por favor elige otro horario.",
             }
 
+        local_new = self._to_local(new_start_time)
         return {
             "success": True,
             "message": "Cita reagendada correctamente",
-            "new_date": new_start_time.strftime("%A %d de %B"),
-            "new_time": new_start_time.strftime("%I:%M %p"),
+            "new_date": local_new.strftime("%A %d de %B"),
+            "new_time": local_new.strftime("%I:%M %p"),
         }
 
     async def _handoff_to_human(self, tool_input: dict[str, Any]) -> dict[str, Any]:
@@ -1035,6 +1070,79 @@ class ToolHandler:
         }
 
     # -------------------------------------------------------------------------
+    # Notifications
+    # -------------------------------------------------------------------------
+
+    async def _notify_owners_new_booking(
+        self,
+        customer: Customer,
+        service: ServiceType,
+        staff: Staff,
+        local_start: datetime,
+    ) -> None:
+        """Notify business owner(s) about a new AI-booked appointment.
+
+        Follows the same pattern as staff_onboarding._notify_owner_staff_onboarded.
+        Errors are logged but never raised — booking must always succeed.
+
+        Args:
+            customer: Customer who booked
+            service: Service booked
+            staff: Staff assigned
+            local_start: Appointment start in org-local time
+        """
+        from app.models import ParloUserPermissionLevel
+        from app.services.whatsapp import WhatsAppClient, resolve_whatsapp_sender
+
+        # Find owner(s)
+        result = await self.db.execute(
+            select(Staff).where(
+                Staff.organization_id == self.org.id,
+                Staff.permission_level == ParloUserPermissionLevel.OWNER.value,
+                Staff.is_active == True,
+            )
+        )
+        owners = result.scalars().all()
+
+        if not owners:
+            logger.warning(f"No owners found for org {self.org.name} (ID: {self.org.id})")
+            return
+
+        # Build notification message
+        customer_display = customer.name or "Cliente"
+        customer_phone = customer.phone_number or ""
+        date_str = local_start.strftime("%A %d de %B, %I:%M %p")
+        price_str = f"${service.price_cents / 100:.0f}"
+
+        message = (
+            f"\U0001f4c5 \u00a1Nueva cita agendada!\n\n"
+            f"Cliente: {customer_display} ({customer_phone})\n"
+            f"Servicio: {service.name} ({price_str})\n"
+            f"Fecha: {date_str}\n"
+            f"Con: {staff.name}\n\n"
+            f"Agendada autom\u00e1ticamente por Parlo."
+        )
+
+        # Send to each owner
+        whatsapp = WhatsAppClient(mock_mode=self.mock_mode)
+        try:
+            for owner in owners:
+                if owner.phone_number and owner.id != staff.id:
+                    try:
+                        from_number = resolve_whatsapp_sender(self.org) or self.org.whatsapp_phone_number_id
+                        await whatsapp.send_text_message(
+                            phone_number_id=self.org.whatsapp_phone_number_id or "",
+                            to=owner.phone_number,
+                            message=message,
+                            from_number=from_number,
+                        )
+                        logger.info(f"Booking notification sent to owner {owner.name}")
+                    except Exception as e:
+                        logger.error(f"Failed to notify owner {owner.name}: {e}")
+        finally:
+            await whatsapp.close()
+
+    # -------------------------------------------------------------------------
     # Staff Tool Implementations
     # -------------------------------------------------------------------------
 
@@ -1045,12 +1153,16 @@ class ToolHandler:
         if not staff:
             return {"error": "No se pudo identificar al empleado"}
 
-        date_from_str = tool_input.get("date_from", datetime.now().strftime("%Y-%m-%d"))
+        org_tz = self._get_org_tz()
+        now_local = datetime.now(org_tz)
+        date_from_str = tool_input.get("date_from", now_local.strftime("%Y-%m-%d"))
         date_to_str = tool_input.get("date_to", date_from_str)
 
         try:
-            date_from = datetime.strptime(date_from_str, "%Y-%m-%d")
-            date_to = datetime.strptime(date_to_str, "%Y-%m-%d")
+            date_from_local = datetime.strptime(date_from_str, "%Y-%m-%d").replace(tzinfo=org_tz)
+            date_to_local = datetime.strptime(date_to_str, "%Y-%m-%d").replace(tzinfo=org_tz)
+            date_from_utc = date_from_local.astimezone(timezone.utc)
+            date_to_utc = (date_to_local + timedelta(days=1)).astimezone(timezone.utc)
         except ValueError:
             return {"error": "Formato de fecha inválido"}
 
@@ -1059,8 +1171,8 @@ class ToolHandler:
             select(Appointment)
             .where(
                 Appointment.parlo_user_id == staff.id,
-                Appointment.scheduled_start >= date_from,
-                Appointment.scheduled_start <= date_to + timedelta(days=1),
+                Appointment.scheduled_start >= date_from_utc,
+                Appointment.scheduled_start < date_to_utc,
                 Appointment.status.in_([
                     AppointmentStatus.PENDING.value,
                     AppointmentStatus.CONFIRMED.value,
@@ -1070,14 +1182,14 @@ class ToolHandler:
         )
         appointments = result.scalars().all()
 
-        # Get blocked time for this staff
+        # Get blocked time for this staff (use local dates for exception lookup)
         blocked_result = await self.db.execute(
             select(Availability).where(
                 Availability.parlo_user_id == staff.id,
                 Availability.type == AvailabilityType.EXCEPTION.value,
                 Availability.is_available == False,
-                Availability.exception_date >= date_from.date(),
-                Availability.exception_date <= date_to.date(),
+                Availability.exception_date >= date_from_local.date(),
+                Availability.exception_date <= date_to_local.date(),
             )
         )
         blocked_times = blocked_result.scalars().all()
@@ -1087,10 +1199,12 @@ class ToolHandler:
             service = await self.db.get(ServiceType, apt.service_type_id)
             customer = await self.db.get(Customer, apt.end_customer_id)
 
+            local_start = self._to_local(apt.scheduled_start)
+            local_end = self._to_local(apt.scheduled_end)
             formatted.append({
                 "type": "appointment",
-                "time": apt.scheduled_start.strftime("%I:%M %p"),
-                "end_time": apt.scheduled_end.strftime("%I:%M %p"),
+                "time": local_start.strftime("%I:%M %p"),
+                "end_time": local_end.strftime("%I:%M %p"),
                 "service": service.name if service else "Unknown",
                 "customer": customer.name if customer and customer.name else "Cliente",
                 "customer_phone": customer.phone_number if customer else None,
@@ -1138,12 +1252,16 @@ class ToolHandler:
         self, tool_input: dict[str, Any]
     ) -> dict[str, Any]:
         """Get full business schedule."""
-        date_from_str = tool_input.get("date_from", datetime.now().strftime("%Y-%m-%d"))
+        org_tz = self._get_org_tz()
+        now_local = datetime.now(org_tz)
+        date_from_str = tool_input.get("date_from", now_local.strftime("%Y-%m-%d"))
         date_to_str = tool_input.get("date_to", date_from_str)
 
         try:
-            date_from = datetime.strptime(date_from_str, "%Y-%m-%d")
-            date_to = datetime.strptime(date_to_str, "%Y-%m-%d")
+            date_from_local = datetime.strptime(date_from_str, "%Y-%m-%d").replace(tzinfo=org_tz)
+            date_to_local = datetime.strptime(date_to_str, "%Y-%m-%d").replace(tzinfo=org_tz)
+            date_from_utc = date_from_local.astimezone(timezone.utc)
+            date_to_utc = (date_to_local + timedelta(days=1)).astimezone(timezone.utc)
         except ValueError:
             return {"error": "Formato de fecha inválido"}
 
@@ -1151,8 +1269,8 @@ class ToolHandler:
             select(Appointment)
             .where(
                 Appointment.organization_id == self.org.id,
-                Appointment.scheduled_start >= date_from,
-                Appointment.scheduled_start <= date_to + timedelta(days=1),
+                Appointment.scheduled_start >= date_from_utc,
+                Appointment.scheduled_start < date_to_utc,
                 Appointment.status.in_([
                     AppointmentStatus.PENDING.value,
                     AppointmentStatus.CONFIRMED.value,
@@ -1168,8 +1286,9 @@ class ToolHandler:
             customer = await self.db.get(Customer, apt.end_customer_id)
             staff = await self.db.get(Staff, apt.parlo_user_id) if apt.parlo_user_id else None
 
+            local_start = self._to_local(apt.scheduled_start)
             formatted.append({
-                "time": apt.scheduled_start.strftime("%I:%M %p"),
+                "time": local_start.strftime("%I:%M %p"),
                 "staff": staff.name if staff else "Sin asignar",
                 "service": service.name if service else "Unknown",
                 "customer": customer.name if customer and customer.name else "Cliente",
@@ -1199,13 +1318,25 @@ class ToolHandler:
         except ValueError:
             return {"error": "Formato de fecha/hora inválido"}
 
+        # Availability exceptions store local date and time values,
+        # so interpret naive datetimes as org-local
+        if start_time.tzinfo is None:
+            local_start = start_time
+        else:
+            local_start = start_time.astimezone(self._get_org_tz())
+
+        if end_time.tzinfo is None:
+            local_end = end_time
+        else:
+            local_end = end_time.astimezone(self._get_org_tz())
+
         # Create availability exception (blocked = not available)
         availability = Availability(
             parlo_user_id=staff.id,
             type=AvailabilityType.EXCEPTION.value,
-            exception_date=start_time.date(),
-            start_time=start_time.time(),
-            end_time=end_time.time(),
+            exception_date=local_start.date(),
+            start_time=local_start.time(),
+            end_time=local_end.time(),
             is_available=False,
         )
         self.db.add(availability)
@@ -1213,7 +1344,7 @@ class ToolHandler:
 
         return {
             "success": True,
-            "message": f"Tiempo bloqueado de {start_time.strftime('%I:%M %p')} a {end_time.strftime('%I:%M %p')}",
+            "message": f"Tiempo bloqueado de {local_start.strftime('%I:%M %p')} a {local_end.strftime('%I:%M %p')}",
             "reason": reason,
         }
 
@@ -1375,7 +1506,7 @@ class ToolHandler:
 
         if conflicts:
             conflict = conflicts[0]
-            conflict_end = conflict.scheduled_end.strftime("%I:%M %p")
+            conflict_end = self._to_local(conflict.scheduled_end).strftime("%I:%M %p")
             return {
                 "error": f"No puedes registrar el walk-in ahora. Tienes una cita hasta las {conflict_end}.",
                 "suggestion": "Espera a que termine la cita actual o asigna a otro empleado.",
@@ -1440,9 +1571,10 @@ class ToolHandler:
         formatted = []
         for apt in appointments:
             service = await self.db.get(ServiceType, apt.service_type_id)
+            local_start = self._to_local(apt.scheduled_start)
             formatted.append({
-                "date": apt.scheduled_start.strftime("%Y-%m-%d"),
-                "time": apt.scheduled_start.strftime("%I:%M %p"),
+                "date": local_start.strftime("%Y-%m-%d"),
+                "time": local_start.strftime("%I:%M %p"),
                 "service": service.name if service else "Unknown",
                 "status": apt.status,
             })

@@ -13,6 +13,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -53,6 +54,8 @@ def build_flow_aware_system_prompt(
     customer_preferences: dict[str, Any] | None = None,
     cross_business_info: dict[str, Any] | None = None,
     needs_name_confirmation: bool = False,
+    business_hours: dict | None = None,
+    address: str | None = None,
 ) -> str:
     """Build system prompt that's aware of current flow state and customer profile.
 
@@ -65,6 +68,8 @@ def build_flow_aware_system_prompt(
         customer_preferences: Customer preferences from profile analysis
         cross_business_info: Info from other businesses
         needs_name_confirmation: Whether to ask customer to confirm their name
+        business_hours: Location business hours dict
+        address: Location address
 
     Returns:
         System prompt string
@@ -102,13 +107,22 @@ def build_flow_aware_system_prompt(
     elif not customer.name:
         name_note = "\n📝 Recuerda preguntar el nombre al momento de agendar la cita."
 
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    tomorrow = (datetime.now(timezone.utc) + timedelta(days=1)).strftime("%Y-%m-%d")
+    org_tz = ZoneInfo(org.timezone) if org.timezone else ZoneInfo("America/Mexico_City")
+    now_local = datetime.now(org_tz)
+    today = now_local.strftime("%Y-%m-%d")
+    tomorrow = (now_local + timedelta(days=1)).strftime("%Y-%m-%d")
+
+    # Format business hours
+    from app.ai.prompts import format_business_hours
+    hours_str = format_business_hours(business_hours)
 
     base_prompt = f"""Eres Parlo, asistente virtual de {org.name}. Ayudas a clientes a agendar citas.
 
 ## Información del Negocio
 - Nombre: {org.name}
+{f"- Dirección: {address}" if address else ""}
+- Horario de atención:
+{hours_str}
 
 ## Servicios Disponibles
 {services_list}
@@ -331,6 +345,7 @@ class CustomerFlowHandler:
         db: AsyncSession,
         organization: Organization,
         openai_client: OpenAIClient | None = None,
+        mock_mode: bool = False,
     ):
         """Initialize customer flow handler.
 
@@ -338,11 +353,12 @@ class CustomerFlowHandler:
             db: Database session
             organization: Current organization
             openai_client: OpenAI client (uses singleton if not provided)
+            mock_mode: If True, WhatsApp messages are mocked (for simulation)
         """
         self.db = db
         self.org = organization
         self.client = openai_client or get_openai_client()
-        self.tool_handler = ToolHandler(db, organization)
+        self.tool_handler = ToolHandler(db, organization, mock_mode=mock_mode)
 
     async def handle_message(
         self,
@@ -390,6 +406,9 @@ class CustomerFlowHandler:
         cross_business_info = await lookup_cross_business_profile(self.db, customer.phone_number)
         needs_name_confirmation = await should_reconfirm_info(customer)
 
+        # Get primary location for business hours and address
+        location = await self._get_primary_location()
+
         # Build flow-aware system prompt with customer profile context
         system_prompt = build_flow_aware_system_prompt(
             org=self.org,
@@ -400,6 +419,8 @@ class CustomerFlowHandler:
             customer_preferences=customer_preferences,
             cross_business_info=cross_business_info,
             needs_name_confirmation=needs_name_confirmation,
+            business_hours=location.business_hours if location else None,
+            address=location.address if location else None,
         )
 
         # Get conversation history
@@ -656,6 +677,18 @@ class CustomerFlowHandler:
             )
         )
         return list(result.scalars().all())
+
+    async def _get_primary_location(self):
+        """Get primary location for the organization."""
+        from app.models import Location
+
+        result = await self.db.execute(
+            select(Location).where(
+                Location.organization_id == self.org.id,
+                Location.is_primary == True,
+            )
+        )
+        return result.scalar_one_or_none()
 
     async def _get_customer_appointments(self, customer_id: UUID) -> list[Appointment]:
         """Get customer's appointments."""
