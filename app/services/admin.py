@@ -1,5 +1,6 @@
 """Admin service - business logic for admin operations."""
 
+import logging
 from uuid import UUID
 
 from sqlalchemy import delete, func, select
@@ -17,6 +18,8 @@ from app.models import (
     Staff,
 )
 from app.utils.jwt import create_access_token
+
+logger = logging.getLogger(__name__)
 
 
 async def get_admin_stats(db: AsyncSession) -> dict:
@@ -210,10 +213,28 @@ async def delete_organization(db: AsyncSession, org_id: UUID) -> bool:
 
     All related entities (Staff, Location, Appointments, etc.) are deleted
     automatically via FK cascades defined in the models.
+
+    If the org had a provisioned WhatsApp number, the number stays in our
+    Twilio account and becomes available for reuse by future orgs.
     """
-    result = await db.execute(delete(Organization).where(Organization.id == org_id))
+    result = await db.execute(
+        select(Organization).where(Organization.id == org_id)
+    )
+    org = result.scalar_one_or_none()
+    if not org:
+        return False
+
+    # Log detached number for audit trail — it stays purchased in Twilio
+    # and will be recycled when the next org is provisioned
+    if org.whatsapp_phone_number_id:
+        logger.info(
+            f"Detaching WhatsApp number {org.whatsapp_phone_number_id} from "
+            f"org '{org.name}' (id={org_id}) — number available for reuse"
+        )
+
+    await db.delete(org)
     await db.commit()
-    return result.rowcount > 0
+    return True
 
 
 async def get_activity_feed(db: AsyncSession, limit: int = 50) -> list[dict]:

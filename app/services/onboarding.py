@@ -897,6 +897,7 @@ class OnboardingHandler(ToolCallingMixin):
                         business_name=collected["business_name"],
                         webhook_base_url=_settings.app_base_url,
                         country_code="US",
+                        db=self.db,
                     )
                     if result:
                         collected["twilio_provisioned_number"] = result["phone_number"]
@@ -998,6 +999,7 @@ class OnboardingHandler(ToolCallingMixin):
                     business_name=business_name,
                     webhook_base_url=_settings.app_base_url,
                     country_code=country_code,
+                    db=self.db,
                 )
 
                 if result:

@@ -31,6 +31,7 @@ class AdminOrganizationSummary(BaseModel):
     phone_country_code: str
     status: str
     whatsapp_connected: bool
+    whatsapp_phone_number: str | None = None
     created_at: datetime
 
     class Config:

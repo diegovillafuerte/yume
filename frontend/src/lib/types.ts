@@ -214,6 +214,7 @@ export interface AdminOrganizationSummary {
   phone_country_code: string;
   status: string;
   whatsapp_connected: boolean;
+  whatsapp_phone_number: string | null;
   created_at: string;
 }
 

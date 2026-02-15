@@ -139,7 +139,7 @@ export default function AdminOrganizationsPage() {
                     Status
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    WhatsApp
+                    Assigned Number
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Created
@@ -164,11 +164,11 @@ export default function AdminOrganizationsPage() {
                         {org.status}
                       </span>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      {org.whatsapp_connected ? (
-                        <span className="text-green-600 text-sm">Connected</span>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                      {org.whatsapp_phone_number ? (
+                        <span className="text-green-600 font-mono">{org.whatsapp_phone_number}</span>
                       ) : (
-                        <span className="text-gray-400 text-sm">Not connected</span>
+                        <span className="text-gray-400">&mdash;</span>
                       )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
