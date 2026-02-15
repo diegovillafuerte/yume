@@ -151,6 +151,7 @@ class TwilioProvisioningService:
         self,
         phone_number: str,
         business_name: str,
+        callback_url: str | None = None,
         status_callback_url: str | None = None,
     ) -> dict[str, Any] | None:
         """Register a phone number as WhatsApp sender under Parlo's WABA.
@@ -160,6 +161,7 @@ class TwilioProvisioningService:
         Args:
             phone_number: Phone number in E.164 format (e.g., +525512345678)
             business_name: Display name for WhatsApp (must follow Meta guidelines)
+            callback_url: Webhook for incoming WhatsApp messages
             status_callback_url: Webhook for status updates (sender state changes)
 
         Returns:
@@ -184,10 +186,14 @@ class TwilioProvisioningService:
             },
         }
 
+        webhook = {}
+        if callback_url:
+            webhook["callback_url"] = callback_url
+            webhook["callback_method"] = "POST"
         if status_callback_url:
-            payload["webhook"] = {
-                "status_callback_url": status_callback_url,
-            }
+            webhook["status_callback_url"] = status_callback_url
+        if webhook:
+            payload["webhook"] = webhook
 
         try:
             response = await self.client.post(
@@ -242,6 +248,47 @@ class TwilioProvisioningService:
         except httpx.HTTPError as e:
             logger.error(f"Failed to get sender status: {e}")
             return None
+
+    @traced(trace_type="external_api", capture_args=["sender_sid"])
+    async def update_sender_webhook(
+        self,
+        sender_sid: str,
+        callback_url: str,
+    ) -> bool:
+        """Update the incoming message webhook URL for an existing WhatsApp sender.
+
+        Args:
+            sender_sid: The Twilio sender SID
+            callback_url: URL for incoming WhatsApp messages
+
+        Returns:
+            True if successful
+        """
+        if not self.is_configured:
+            return False
+
+        url = f"{self.senders_url}/{sender_sid}"
+        payload = {
+            "webhook": {
+                "callback_url": callback_url,
+                "callback_method": "POST",
+            },
+        }
+
+        try:
+            response = await self.client.post(
+                url,
+                json=payload,
+                auth=(self.account_sid, self.auth_token),
+            )
+            response.raise_for_status()
+            logger.info(f"Updated webhook for sender {sender_sid}: {callback_url}")
+            return True
+        except httpx.HTTPError as e:
+            logger.error(f"Failed to update sender webhook: {e}")
+            if hasattr(e, "response") and e.response is not None:
+                logger.error(f"Response: {e.response.text}")
+            return False
 
     @traced(trace_type="external_api", capture_args=["sender_sid"])
     async def submit_verification_code(
@@ -346,6 +393,47 @@ class TwilioProvisioningService:
             logger.error(f"Failed to release number: {e}")
             return False
 
+    @traced(trace_type="external_api")
+    async def list_owned_numbers(self) -> list[dict[str, Any]]:
+        """List all phone numbers owned by our Twilio account.
+
+        Handles pagination to return all numbers.
+
+        Returns:
+            List of dicts with sid, phone_number, friendly_name
+        """
+        if not self.is_configured:
+            logger.warning("Twilio not configured, returning empty list")
+            return []
+
+        numbers: list[dict[str, Any]] = []
+        url: str | None = f"{self.phone_numbers_url}/IncomingPhoneNumbers.json"
+
+        try:
+            while url:
+                response = await self.client.get(
+                    url,
+                    auth=(self.account_sid, self.auth_token),
+                )
+                response.raise_for_status()
+                data = response.json()
+
+                for num in data.get("incoming_phone_numbers", []):
+                    numbers.append({
+                        "sid": num["sid"],
+                        "phone_number": num["phone_number"],
+                        "friendly_name": num.get("friendly_name", ""),
+                    })
+
+                # Twilio pagination: next_page_uri is null when no more pages
+                next_page = data.get("next_page_uri")
+                url = f"https://api.twilio.com{next_page}" if next_page else None
+
+            return numbers
+        except httpx.HTTPError as e:
+            logger.error(f"Failed to list owned numbers: {e}")
+            return []
+
     async def close(self) -> None:
         """Close the HTTP client."""
         await self.client.aclose()
@@ -356,27 +444,71 @@ async def provision_number_for_business(
     business_name: str,
     webhook_base_url: str,
     country_code: str = "US",
+    db=None,
 ) -> dict[str, Any] | None:
-    """Provision a new phone number for a business and register for WhatsApp.
+    """Provision a phone number for a business and register for WhatsApp.
 
-    This is a convenience function that:
-    1. Lists available numbers
-    2. Purchases the first available one
-    3. Registers it as a WhatsApp sender under Parlo's WABA
-    4. If sender registration fails, releases the purchased number (rollback)
+    Tries to reuse an unassigned number from a deleted org first. If none
+    available, purchases a new one from Twilio.
 
     Args:
         business_name: Name of the business (for friendly name and WhatsApp profile)
         webhook_base_url: Base URL for webhooks (e.g., https://api.parlo.mx)
         country_code: Country code for the number
+        db: Optional AsyncSession — if provided, checks for recyclable numbers first
 
     Returns:
         Dict with phone_number, phone_number_sid, sender_sid, sender_status,
-        or None on failure
+        or None on failure. Includes "reused": True if a recycled number was used.
     """
     service = TwilioProvisioningService()
 
     try:
+        # Step 0: Try to reuse an unassigned number from a deleted org
+        if db is not None:
+            unassigned = await find_unassigned_number(db)
+            if unassigned:
+                logger.info(
+                    f"Reusing number {unassigned['phone_number']} for {business_name}"
+                )
+                # Re-register as WhatsApp sender with the new business name
+                if service.is_whatsapp_configured:
+                    callback_url = f"{webhook_base_url}/api/v1/webhooks/whatsapp"
+                    status_callback_url = (
+                        settings.twilio_senders_webhook_url
+                        or f"{webhook_base_url}/api/v1/webhooks/twilio/sender-status"
+                    )
+                    sender = await service.register_whatsapp_sender(
+                        phone_number=unassigned["phone_number"],
+                        business_name=business_name,
+                        callback_url=callback_url,
+                        status_callback_url=status_callback_url,
+                    )
+                    if sender:
+                        return {
+                            "phone_number": unassigned["phone_number"],
+                            "phone_number_sid": unassigned["sid"],
+                            "sender_sid": sender.get("sid"),
+                            "sender_status": sender.get("status"),
+                            "friendly_name": unassigned.get("friendly_name"),
+                            "reused": True,
+                        }
+                    else:
+                        logger.warning(
+                            "Failed to re-register reused number as WhatsApp sender, "
+                            "falling back to purchasing new number"
+                        )
+                else:
+                    # WABA not configured — reuse number without sender registration
+                    return {
+                        "phone_number": unassigned["phone_number"],
+                        "phone_number_sid": unassigned["sid"],
+                        "sender_sid": None,
+                        "sender_status": None,
+                        "friendly_name": unassigned.get("friendly_name"),
+                        "reused": True,
+                    }
+
         # Step 1: List available numbers
         available = await service.list_available_numbers(
             country_code=country_code,
@@ -406,6 +538,7 @@ async def provision_number_for_business(
 
         # Step 3: Register as WhatsApp sender (if WABA is configured)
         if service.is_whatsapp_configured:
+            callback_url = f"{webhook_base_url}/api/v1/webhooks/whatsapp"
             status_callback_url = (
                 settings.twilio_senders_webhook_url
                 or f"{webhook_base_url}/api/v1/webhooks/twilio/sender-status"
@@ -414,6 +547,7 @@ async def provision_number_for_business(
             sender = await service.register_whatsapp_sender(
                 phone_number=phone_number,
                 business_name=business_name,
+                callback_url=callback_url,
                 status_callback_url=status_callback_url,
             )
 
@@ -446,5 +580,54 @@ async def provision_number_for_business(
                 "friendly_name": purchased.get("friendly_name"),
             }
 
+    finally:
+        await service.close()
+
+
+async def find_unassigned_number(db) -> dict[str, Any] | None:
+    """Find a Twilio number we own that isn't assigned to any organization.
+
+    Compares our Twilio account's numbers against Organization.whatsapp_phone_number_id
+    to find orphaned numbers (e.g., from deleted orgs) that can be reused.
+
+    Args:
+        db: AsyncSession
+
+    Returns:
+        Dict with sid, phone_number, friendly_name of first unassigned number, or None
+    """
+    from sqlalchemy import select as sa_select
+    from app.models import Organization
+
+    service = TwilioProvisioningService()
+    try:
+        owned = await service.list_owned_numbers()
+        if not owned:
+            return None
+
+        # Get all phone numbers currently assigned to orgs
+        result = await db.execute(
+            sa_select(Organization.whatsapp_phone_number_id).where(
+                Organization.whatsapp_phone_number_id.isnot(None)
+            )
+        )
+        assigned_numbers = {row[0] for row in result.all()}
+
+        # Also exclude Parlo's central number (format: "whatsapp:+1..." → "+1...")
+        central = settings.twilio_whatsapp_number
+        if central:
+            central_phone = central.replace("whatsapp:", "")
+            assigned_numbers.add(central_phone)
+
+        # Find the first owned number not assigned to any org
+        for num in owned:
+            if num["phone_number"] not in assigned_numbers:
+                logger.info(
+                    f"Found unassigned number for reuse: {num['phone_number']} "
+                    f"(SID: {num['sid']})"
+                )
+                return num
+
+        return None
     finally:
         await service.close()

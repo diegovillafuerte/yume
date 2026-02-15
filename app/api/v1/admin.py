@@ -5,6 +5,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.admin_deps import require_admin
@@ -100,6 +101,7 @@ async def list_organizations(
             phone_country_code=org.phone_country_code,
             status=str(org.status),
             whatsapp_connected=bool(org.whatsapp_phone_number_id),
+            whatsapp_phone_number=org.whatsapp_phone_number_id,
             created_at=org.created_at,
         )
         for org in orgs
@@ -158,6 +160,7 @@ async def get_organization(
         phone_country_code=org.phone_country_code,
         status=str(org.status),
         whatsapp_connected=bool(org.whatsapp_phone_number_id),
+        whatsapp_phone_number=org.whatsapp_phone_number_id,
         created_at=org.created_at,
         timezone=org.timezone,
         settings=org.settings or {},
@@ -542,3 +545,61 @@ async def assign_whatsapp_number(
         organization_id=org.id,
         organization_name=org.name,
     )
+
+
+@router.post(
+    "/organizations/fix-sender-webhooks",
+    dependencies=[Depends(require_admin)],
+)
+async def fix_sender_webhooks(
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    """Fix missing callback_url on all provisioned WhatsApp senders.
+
+    This updates each sender registered via the Senders API to include
+    the incoming message webhook URL (callback_url), which was previously
+    missing and caused incoming messages to be silently dropped by Twilio.
+    """
+    from app.models import Organization
+    from app.services.twilio_provisioning import TwilioProvisioningService
+
+    settings = get_settings()
+    callback_url = f"{settings.app_base_url}/api/v1/webhooks/whatsapp"
+
+    result = await db.execute(
+        select(Organization).where(
+            Organization.whatsapp_phone_number_id.isnot(None)
+        )
+    )
+    orgs = result.scalars().all()
+
+    service = TwilioProvisioningService()
+    results = []
+
+    try:
+        for org in orgs:
+            sender_sid = (org.settings or {}).get("sender_sid")
+            if not sender_sid:
+                results.append({
+                    "org": org.name,
+                    "phone": org.whatsapp_phone_number_id,
+                    "status": "skipped",
+                    "reason": "no sender_sid in settings",
+                })
+                continue
+
+            success = await service.update_sender_webhook(
+                sender_sid=sender_sid,
+                callback_url=callback_url,
+            )
+            results.append({
+                "org": org.name,
+                "phone": org.whatsapp_phone_number_id,
+                "sender_sid": sender_sid,
+                "status": "updated" if success else "failed",
+                "callback_url": callback_url,
+            })
+    finally:
+        await service.close()
+
+    return {"results": results, "callback_url": callback_url}
